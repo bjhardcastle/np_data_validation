@@ -32,10 +32,11 @@ import pdb
 import re
 import sys
 import tempfile
+from warnings import WarningMessage
 import zlib
 from multiprocessing.sharedctypes import Value
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
-
+  
 
 def progressbar(it,
                 prefix="",
@@ -95,14 +96,56 @@ def valid_crc32_checksum(value: str) -> bool:
         and all(c in '0123456789ABCDEF' for c in value.upper()):
         return True
     return False
-
-
+    
+    
+class Session:
+    """Get session information from any string: filename, path, or foldername"""
+    
+    # use staticmethods with any path/string, without instantiating the class:
+    #
+    #  Session.mouse(
+    #  "c:/1234566789_611166_20220708_surface-image1-left.png"
+    #   )
+    #  >>> "611166"
+    #
+    # or instantiate the class and reuse the same session:
+    #   session = Session(
+    #  "c:/1234566789_611166_20220708_surface-image1-left.png"
+    #   )
+    #   session.id
+    #   >>> "1234566789"
+        
+    def __init__(self, path:str):
+        if not isinstance(path,str):
+            raise TypeError(f"{self.__class__} path must be a string")
+        
+        self.folder = self.folder(path)
+        
+        # extract the constituent parts of the session folder
+        self.id = self.folder.split('_')[0]
+        self.mouse = self.folder.split('_')[1]
+        self.date = self.folder.split('_')[2]
+    
+    @classmethod
+    def folder(cls, path) -> Union[str, None]:
+        """Extract [10-digit session ID]_[6-digit mouse ID]_[6-digit date
+        str] from a file or folder path"""
+            
+        # identify a session based on
+        # [10-digit session ID]_[6-digit mouseID]_[6-digit date str]
+        session_reg_exp = "[0-9]{0,10}_[0-9]{0,6}_[0-9]{0,8}"
+        
+        session_folders = re.findall(session_reg_exp, path)
+        if session_folders:
+            if not all(s==session_folders for s in session_folders):
+                UserWarning(f"Mismatch between session folder strings - file may be in the wrong filder: {path}")
+            return session_folders[0]
+        else:
+            return None
+    
+ 
 class SessionFile:
     """ Represents a single file belonging to a neuropixels ecephys session """
-
-    # identify a session based on
-    # [10-digit session ID]_[6-digit mouseID]_[6-digit date str]
-    session_reg_exp = "[0-9]{0,10}_[0-9]{0,6}_[0-9]{0,8}"
 
     def __init__(self, path: str):
         """ from the complete file path we can extract some information upon
@@ -132,23 +175,16 @@ class SessionFile:
         self.parent = pathlib.Path(os.path.dirname(self.path)).parts[-1]
 
         # extract the session ID from anywhere in the path
-        session_folders = re.search(self.session_reg_exp, path)
-        if session_folders:
-
-            self.session_folder = session_folders[0]
-
-            # extract the constituent parts of the session folder
-            self.session_id = self.session_folder.split('_')[0]
-            self.mouse_id = self.session_folder.split('_')[1]
-            self.date = self.session_folder.split('_')[2]
+        self.session = Session(self.path)
+        if self.session:
 
             # we expect the session_folder string to first appear in the path as
-            # a child of some 'repository' of session folders or individual
-            # files - split the path at the first session_folder match and call
-            # that folder the root
+            # a child of some 'repository' of session folders, or there rare
+            # loose individual files - split the path at the first
+            # session_folder match and call that folder the root
             parts = pathlib.Path(self.path).parts
             while parts:
-                if self.session_folder in parts[0]:
+                if self.session.folder in parts[0]:
                     break
                 parts = parts[1:]
             else:
@@ -157,7 +193,7 @@ class SessionFile:
 
             # if the repository contains session folders, it should contain the
             # following:
-            session_folder_path = os.path.join(self.root_path, self.session_folder)
+            session_folder_path = os.path.join(self.root_path, self.session.folder)
 
             # but this may not exist: we could have a file sitting in a folder
             # with assorted files from multiple sessions (e.g. LIMS incoming),
@@ -285,6 +321,17 @@ class DataValidationFile(abc.ABC):
         return self.checksum == other.checksum and self.size == other.size
 
 
+class DataValidationFolder:
+    
+    def __init__(self, path:str):
+        
+        # if path is a file we can gain 
+        try:
+            self.path = SessionFile(path).parent.as_posix()
+        except ValueError:
+            pass
+            
+            
 class CRC32DataValidationFile(DataValidationFile, SessionFile):
 
     # DB: DataValidationDB = CRC32JsonDataValidationDB()
@@ -568,9 +615,8 @@ class CRC32JsonDataValidationDB(DataValidationDB):
             name = os.path.basename(path)
             parent = pathlib.Path(path).parent.parts[-1]
 
-            session_folders = re.search(SessionFile.session_reg_exp, path)
-            session_folder = session_folders[0] if session_folders else None
-
+            session_folder = Session.folder(path)
+            
             if not size:
                 size = os.path.getsize(path)
 
