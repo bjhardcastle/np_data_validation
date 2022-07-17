@@ -31,14 +31,14 @@ import pathlib
 import pdb
 import re
 import shelve
-from sqlite3 import dbapi2
 import sys
 import tempfile
-from warnings import WarningMessage
 import zlib
 from multiprocessing.sharedctypes import Value
+from sqlite3 import dbapi2
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
-  
+from warnings import WarningMessage
+
 
 def progressbar(it,
                 prefix="",
@@ -98,11 +98,11 @@ def valid_crc32_checksum(value: str) -> bool:
         and all(c in '0123456789ABCDEF' for c in value.upper()):
         return True
     return False
-    
-    
+
+
 class Session:
     """Get session information from any string: filename, path, or foldername"""
-    
+
     # use staticmethods with any path/string, without instantiating the class:
     #
     #  Session.mouse(
@@ -116,36 +116,36 @@ class Session:
     #   )
     #   session.id
     #   >>> "1234566789"
-        
-    def __init__(self, path:str):
-        if not isinstance(path,str):
+
+    def __init__(self, path: str):
+        if not isinstance(path, str):
             raise TypeError(f"{self.__class__} path must be a string")
-        
-        self.folder = self.folder(path)
-        
+
+        self.folder = self.__class__.folder(path)
+
         # extract the constituent parts of the session folder
         self.id = self.folder.split('_')[0]
         self.mouse = self.folder.split('_')[1]
         self.date = self.folder.split('_')[2]
-    
+
     @classmethod
     def folder(cls, path) -> Union[str, None]:
         """Extract [10-digit session ID]_[6-digit mouse ID]_[6-digit date
         str] from a file or folder path"""
-            
+
         # identify a session based on
         # [10-digit session ID]_[6-digit mouseID]_[6-digit date str]
         session_reg_exp = "[0-9]{0,10}_[0-9]{0,6}_[0-9]{0,8}"
-        
+
         session_folders = re.findall(session_reg_exp, path)
         if session_folders:
-            if not all(s==session_folders for s in session_folders):
+            if not all(s == session_folders for s in session_folders):
                 UserWarning(f"Mismatch between session folder strings - file may be in the wrong filder: {path}")
             return session_folders[0]
         else:
             return None
-    
- 
+
+
 class SessionFile:
     """ Represents a single file belonging to a neuropixels ecephys session """
 
@@ -157,7 +157,7 @@ class SessionFile:
             raise TypeError(f"{self.__class__}: path must be a str pointing to a file: {type(path)=}")
         if isinstance(path, pathlib.Path):
             path = str(path)
-        
+
         self.accessible = os.path.exists(path)
         # ensure the path is a file, not directory
         # if the file doesn't exist, we have to assume based on lack of file extension
@@ -281,6 +281,8 @@ class DataValidationFile(abc.ABC):
         else:
             self.path = pathlib.Path(path).as_posix()
 
+        self.name = os.path.basename(self.path)
+
         if path and not size and os.path.exists(path): # TODO replace exists check, race condition
             self.size = os.path.getsize(path)
         elif size and isinstance(size, int):
@@ -319,33 +321,82 @@ class DataValidationFile(abc.ABC):
             raise ValueError(f"{self.__class__}: trying to set an invalid {self.checksum_name} checksum")
 
     def __repr__(self):
-        return f"(path='{self.path or ''}, checksum={self.checksum or ''}, size={self.size or ''})"
+        return f"(path='{self.path or ''}', checksum='{self.checksum or ''}', size={self.size or ''})"
 
     def __eq__(self, other):
         # print("Testing checksum equality and filesize equality:")
-        return self.checksum == other.checksum and self.size == other.size
+        # if (self.checksum == other.checksum and self.size == other.size) \
+        # or (self.checksum == other.checksum and self.size == other.size and self.path == other.path):
+        if (self.checksum == other.checksum) \
+            and (self.size == other.size) \
+            and (self.path == other.path) \
+            : # self
+            return -1
+
+        elif (self.checksum == other.checksum) \
+            and (self.size == other.size) \
+            and (self.name == other.name) \
+            and (self.path != other.path) \
+            : # valid copy, not self
+            return 1
+
+        elif (self.checksum == other.checksum) \
+            and (self.size == other.size) \
+            and (self.name != other.name) \
+            and (self.path != other.path) \
+            : # valid copy, different name
+            return 11
+
+        elif (self.name == other.name) \
+            and (self.path != other.path) \
+            : # invalid copy ( multiple categories)
+
+            if (self.size != other.size) \
+                and (self.checksum != other.checksum) \
+                : # out-of-sync copy or incorrect data named as copy
+                return 2
+            
+            if (self.size != other.size) \
+                and (self.checksum == other.checksum) \
+                : # out-of-sync copy or incorrect data named as copy
+                # plus checksum which needs updating 
+                # (different size with same checksum isn't possible)
+                return 22
+
+            if (self.size == other.size) \
+                and (self.checksum != other.checksum) \
+                : # possible data corruption, or checksum needs updating
+                return 3
+
+        elif (self.checksum == other.checksum) \
+            and (self.size != other.size) \
+            and (self.name != other.name) \
+            : # possible checksum collision
+            return 4
+
+        else:      # apparently unrelated files (different name && checksum && size)
+            return 0
 
 
 class DataValidationFolder:
-    
-    def __init__(self, path:str):
-        
-        # if path is a file we can gain 
+
+    def __init__(self, path: str):
+
+        # if path is a file we can gain
         try:
             self.path = SessionFile(path).parent.as_posix()
         except ValueError:
             pass
-            
-    def add_backup_path(self, path:Union[str, List[str]]):
+
+    def add_backup_path(self, path: Union[str, List[str]]):
         """Store one or more paths to backup folders for the session"""
         pass
-    
-    def clear_dir(self, path:str):
+
+    def clear_dir(self, path: str):
         """Clear the contents of a folder if backups exist"""
         pass
-    
-    
-            
+
+
 class CRC32DataValidationFile(DataValidationFile, SessionFile):
 
     # DB: DataValidationDB = CRC32JsonDataValidationDB()
@@ -464,14 +515,15 @@ class DataValidationDB(abc.ABC):
         """
         raise NotImplementedError
 
+
 class ShelveDataValidationDB(DataValidationDB):
     """
     A database that stores data in a shelve database
     """
     DVFile: DataValidationFile = CRC32DataValidationFile
     db = "shelve_by_session"
-    # key = session.folder 
-    
+    # key = session.folder
+
     @classmethod
     def add_file(cls, file: DataValidationFile):
         with shelve.open(cls.db, writeback=True) as db:
@@ -479,11 +531,11 @@ class ShelveDataValidationDB(DataValidationDB):
                 db[file.session.folder].append(file)
             else:
                 db[file.session.folder] = List(file)
-            
+
     # @classmethod
     # def save(cls):
     #     self.db.sync()
-        
+
     @classmethod
     def get_matches(cls,
                     file: DataValidationFile,
@@ -495,7 +547,7 @@ class ShelveDataValidationDB(DataValidationDB):
         with shelve.open(cls.db, writeback=True) as db:
             if file.session.folder in db:
                 return [f for f in db[file.session.folder] if file == f]
-            
+
         # for key in self.db:
         #     if path is not None and key != path:
         #         continue
@@ -508,8 +560,8 @@ class ShelveDataValidationDB(DataValidationDB):
 
     def __del__(self):
         self.db.close()
-        
-        
+
+
 class CRC32JsonDataValidationDB(DataValidationDB):
     """ Represents a database of files with validation metadata in JSON format
     
@@ -535,7 +587,7 @@ class CRC32JsonDataValidationDB(DataValidationDB):
         if path:
             self.path = path
         self.load(self.path)
-        
+
     def load(self, path: str = None):
         """ load the database from disk """
 
@@ -624,7 +676,7 @@ class CRC32JsonDataValidationDB(DataValidationDB):
 
         with open(self.path, 'r') as f:
             dump = json.load(f)
-            
+
         for file in self.db:
 
             item_name = pathlib.Path(file.path).as_posix()
@@ -674,7 +726,7 @@ class CRC32JsonDataValidationDB(DataValidationDB):
         """
         #! for now we only return equality of File(checksum + size)
         # or partial matches based on other input arguments
-        
+
         # TODO return index of match/partial match, plus an enum (or similar) indicating the type of match (see DataValidationDB.__doc__)
         if file and self.db.count(file):
             return [self.db.index(f) for f in self.db if f == file]
@@ -684,7 +736,7 @@ class CRC32JsonDataValidationDB(DataValidationDB):
             parent = pathlib.Path(path).parent.parts[-1]
 
             session_folder = Session.folder(path)
-            
+
             if not size:
                 size = os.path.getsize(path)
 
@@ -698,3 +750,47 @@ class CRC32JsonDataValidationDB(DataValidationDB):
                                 (f.name == name and f.parent == parent) or \
                                     (f.session_folder == session_folder and f.size == size)
                 ]
+
+
+def test_data_validation_file():
+    """ test the data validation file class """
+    class Test(DataValidationFile):
+        def valid(path): return True
+        checksum_generator = "12345678"
+        checksum_test = None
+        checksum_validate = valid
+
+    cls = Test
+    path = '/tmp/test.txt'
+    checksum='12345678'
+    size = 10
+
+    self = cls(path=path, checksum=checksum, size=size)
+    
+    other = cls(path=path, checksum=checksum, size=size)
+    assert (self == self) == -1, "not recognized: self"
+
+    other = cls(path='/tmp2/test.txt', checksum=checksum, size=size)
+    assert (self == other) == 1, "not recgonized: valid copy, not self"
+
+    other = cls(path='/tmp2/test2.txt', checksum=checksum, size=size)
+    assert (self == other) == 11, "not recognized: valid copy, different name"
+
+    other = cls(path='/tmp2/test.txt', checksum='87654321', size=20)
+    assert (self == other) == 2, "not recognized: out-of-sync copy"
+    
+    other = cls(path='/tmp2/test.txt', checksum=checksum, size=20)
+    assert (self == other) == 22, "not recognized: out-of-sync copy with incorrect checksum"
+    #* note checksum is equal, which could occur if it hasn't been updated in db
+
+    other = cls(path='/tmp2/test.txt', checksum='87654321', size=size)
+    assert (self == other) == 3, "not recognized: corrupt copy"
+    
+    other = cls(path='/tmp/test2.txt', checksum=checksum, size=20)
+    assert (self == other) == 4, "not recognized: checksum collision"
+
+    other = cls(path='/tmp/test2.txt', checksum='87654321', size=20)
+    assert (self == other) == 0, "not recognized: unrelated file"
+
+
+test_data_validation_file()
