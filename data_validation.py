@@ -25,6 +25,7 @@ db.DVFile.generate_checksum("//allen/programs/mindscope/production/incoming/reco
 
 import abc
 import dataclasses
+import enum
 import json
 import os
 import pathlib
@@ -339,6 +340,17 @@ class DataValidationFile(abc.ABC):
             return self.checksum < other.checksum \
                 or self.size < other.size
 
+    @enum.unique
+    class Match(enum.IntFlag):
+        SELF = 5
+        VALID_COPY_SAME_NAME = 10
+        VALID_COPY_RENAMED = 11
+        UNSYNCED_DATA = 20
+        UNSYNCED_CHECKSUM = 21
+        CORRUPT_DATA = 22
+        CHECKSUM_COLLISION = 30
+        UNRELATED = 40
+
     def __eq__(self, other):
         # print("Testing checksum equality and filesize equality:")
         # if (self.checksum == other.checksum and self.size == other.size) \
@@ -347,21 +359,21 @@ class DataValidationFile(abc.ABC):
             and (self.size == other.size) \
             and (self.path == other.path) \
             : # self
-            return 5
+            return self.__class__.Match.SELF.value
 
         elif (self.checksum == other.checksum) \
             and (self.size == other.size) \
             and (self.name == other.name) \
             and (self.path != other.path) \
             : # valid copy, not self
-            return 10
+            return self.__class__.Match.VALID_COPY_SAME_NAME.value
 
         elif (self.checksum == other.checksum) \
             and (self.size == other.size) \
             and (self.name != other.name) \
             and (self.path != other.path) \
             : # valid copy, different name
-            return 11
+            return self.__class__.Match.VALID_COPY_RENAMED.value
 
         elif (self.name == other.name) \
             and (self.path != other.path) \
@@ -370,28 +382,29 @@ class DataValidationFile(abc.ABC):
             if (self.size != other.size) \
                 and (self.checksum != other.checksum) \
                 : # out-of-sync copy or incorrect data named as copy
-                return 20
+                return self.__class__.Match.UNSYNCED_DATA.value
 
             if (self.size != other.size) \
                 and (self.checksum == other.checksum) \
                 : # out-of-sync copy or incorrect data named as copy
                 # plus checksum which needs updating
                 # (different size with same checksum isn't possible)
-                return 21
+                return self.__class__.Match.UNSYNCED_CHECKSUM.value
 
             if (self.size == other.size) \
                 and (self.checksum != other.checksum) \
                 : # possible data corruption, or checksum needs updating
-                return 22
+                return self.__class__.Match.CORRUPT_DATA.value
 
         elif (self.checksum == other.checksum) \
             and (self.size != other.size) \
             and (self.name != other.name) \
             : # possible checksum collision
-            return 30
+            return self.__class__.Match.CHECKSUM_COLLISION.value
 
-        else:      # apparently unrelated files (different name && checksum && size)
-            return 40
+        else:      
+            # apparently unrelated files (different name && checksum && size)
+            return self.__class__.Match.UNRELATED.value
 
 
 class DataValidationFolder:
@@ -701,7 +714,7 @@ class CRC32JsonDataValidationDB(DataValidationDB):
                             self.add_file(file=file)
                     except ValueError as e:
                         print('skipping file with no session_id')
-                                                                                   # return
+                        # return
 
     def save(self):
         """ save the database to disk as json file """
