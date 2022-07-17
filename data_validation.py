@@ -30,6 +30,8 @@ import os
 import pathlib
 import pdb
 import re
+import shelve
+from sqlite3 import dbapi2
 import sys
 import tempfile
 from warnings import WarningMessage
@@ -151,12 +153,15 @@ class SessionFile:
         """ from the complete file path we can extract some information upon
         initialization """
 
-        if not isinstance(path, str):
+        if not isinstance(path, (str, pathlib.Path)):
             raise TypeError(f"{self.__class__}: path must be a str pointing to a file: {type(path)=}")
-
+        if isinstance(path, pathlib.Path):
+            path = str(path)
+        
+        self.accessible = os.path.exists(path)
         # ensure the path is a file, not directory
         # if the file doesn't exist, we have to assume based on lack of file extension
-        if not os.path.exists(path):
+        if not self.accessible:
             if os.path.splitext(path)[1] == '':
                 is_file = False
             else:
@@ -207,8 +212,8 @@ class SessionFile:
             # wherever the file is, get its path relative to the parent of a
             # hypothetical session folder ie. session_id/.../filename.ext :
             session_relative_path = pathlib.Path(self.path).relative_to(self.root_path)
-            if session_relative_path.parts[0] != self.session_folder:
-                self.relative_path = os.path.join(self.session_folder, str(session_relative_path))
+            if session_relative_path.parts[0] != self.session.folder:
+                self.relative_path = os.path.join(self.session.folder, str(session_relative_path))
             else:
                 self.relative_path = str(session_relative_path)
 
@@ -276,7 +281,7 @@ class DataValidationFile(abc.ABC):
         else:
             self.path = pathlib.Path(path).as_posix()
 
-        if path and os.path.exists(path):
+        if path and not size and os.path.exists(path): # TODO replace exists check, race condition
             self.size = os.path.getsize(path)
         elif size and isinstance(size, int):
             self.size = size
@@ -331,6 +336,15 @@ class DataValidationFolder:
         except ValueError:
             pass
             
+    def add_backup_path(self, path:Union[str, List[str]]):
+        """Store one or more paths to backup folders for the session"""
+        pass
+    
+    def clear_dir(self, path:str):
+        """Clear the contents of a folder if backups exist"""
+        pass
+    
+    
             
 class CRC32DataValidationFile(DataValidationFile, SessionFile):
 
@@ -353,6 +367,8 @@ class CRC32DataValidationFile(DataValidationFile, SessionFile):
         # if the path doesn't contain a session_id, this will raise an error:
         SessionFile.__init__(self, path)
         DataValidationFile.__init__(self, path=path, checksum=checksum, size=size)
+        # if not hasattr(self, "accessible"):
+        #     self.accessible = os.path.exists(self.path)
 
 
 class DataValidationFolder:
@@ -448,7 +464,52 @@ class DataValidationDB(abc.ABC):
         """
         raise NotImplementedError
 
+class ShelveDataValidationDB(DataValidationDB):
+    """
+    A database that stores data in a shelve database
+    """
+    DVFile: DataValidationFile = CRC32DataValidationFile
+    db = "shelve_by_session"
+    # key = session.folder 
+    
+    @classmethod
+    def add_file(cls, file: DataValidationFile):
+        with shelve.open(cls.db, writeback=True) as db:
+            if file.session.folder in db:
+                db[file.session.folder].append(file)
+            else:
+                db[file.session.folder] = List(file)
+            
+    # @classmethod
+    # def save(cls):
+    #     self.db.sync()
+        
+    @classmethod
+    def get_matches(cls,
+                    file: DataValidationFile,
+                    path: str = None,
+                    size: int = None,
+                    checksum: str = None) -> List[DataValidationFile]:
+        """search database for entries that match any of the given arguments 
+        """
+        with shelve.open(cls.db, writeback=True) as db:
+            if file.session.folder in db:
+                return [f for f in db[file.session.folder] if file == f]
+            
+        # for key in self.db:
+        #     if path is not None and key != path:
+        #         continue
+        #     if size is not None and self.db[key].size != size:
+        #         continue
+        #     if checksum is not None and self.db[key].checksum != checksum:
+        #         continue
+        #     matches.append(self.db[key])
+        # return matches
 
+    def __del__(self):
+        self.db.close()
+        
+        
 class CRC32JsonDataValidationDB(DataValidationDB):
     """ Represents a database of files with validation metadata in JSON format
     
@@ -471,12 +532,14 @@ class CRC32JsonDataValidationDB(DataValidationDB):
     db: List[DataValidationFile] = []
 
     def __init__(self, path: str = None):
-        self.load(path)
-
+        if path:
+            self.path = path
+        self.load(self.path)
+        
     def load(self, path: str = None):
         """ load the database from disk """
 
-        # persistence in notebooks causes db to grow every exection
+        # persistence in notebooks causes db to grow every execution
         if self.db:
             self.db = []
 
@@ -547,8 +610,11 @@ class CRC32JsonDataValidationDB(DataValidationDB):
                     size = items[item]['size'] if 'size' in keys else None
 
                     try:
-                        file = self.DVFile(path=path, checksum=crc32, size=size)
-                        self.add_file(file=file)
+                        file = self.DVFile(path=path, checksum=checksum, size=size)
+                        if ".npx2" or ".dat" in path:
+                            self.add_file(file=file, checksum=checksum, size=size) # takes too long to check sizes here
+                        else:
+                            self.add_file(file=file)
                     except ValueError as e:
                         print('skipping file with no session_id')
                         # return
@@ -556,7 +622,9 @@ class CRC32JsonDataValidationDB(DataValidationDB):
     def save(self):
         """ save the database to disk as json file """
 
-        dump = {}
+        with open(self.path, 'r') as f:
+            dump = json.load(f)
+            
         for file in self.db:
 
             item_name = pathlib.Path(file.path).as_posix()
@@ -589,13 +657,13 @@ class CRC32JsonDataValidationDB(DataValidationDB):
                 self.add_file(file=file)
         self.save()
 
-    def add_file(self, path: str = None, checksum: str = None, size: int = None, file: DataValidationFile = None):
+    def add_file(self, file: DataValidationFile = None, path: str = None, checksum: str = None, size: int = None):
         """ add a validation file object to the database """
 
         if not file:
             file = self.DVFile(path=path, checksum=checksum, size=size)
         self.db.append(file)
-        print(f'added {file.session_folder}/{file.name} to database (not saved)')
+        print(f'added {file.session.folder}/{file.name} to database (not saved)')
 
     def get_matches(self,
                     file: DataValidationFile = None,
