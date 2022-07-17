@@ -323,6 +323,17 @@ class DataValidationFile(abc.ABC):
     def __repr__(self):
         return f"(path='{self.path or ''}', checksum='{self.checksum or ''}', size={self.size or ''})"
 
+    def __lt__(self, other):
+        if self.name and other.name:
+            if self.name == other.name:
+                return self.checksum < other.checksum \
+                    or self.size < other.size
+            else: 
+                return self.name < other.name
+        else:
+            return self.checksum < other.checksum \
+                or self.size < other.size
+    
     def __eq__(self, other):
         # print("Testing checksum equality and filesize equality:")
         # if (self.checksum == other.checksum and self.size == other.size) \
@@ -331,14 +342,14 @@ class DataValidationFile(abc.ABC):
             and (self.size == other.size) \
             and (self.path == other.path) \
             : # self
-            return -1
+            return 5
 
         elif (self.checksum == other.checksum) \
             and (self.size == other.size) \
             and (self.name == other.name) \
             and (self.path != other.path) \
             : # valid copy, not self
-            return 1
+            return 10
 
         elif (self.checksum == other.checksum) \
             and (self.size == other.size) \
@@ -354,28 +365,28 @@ class DataValidationFile(abc.ABC):
             if (self.size != other.size) \
                 and (self.checksum != other.checksum) \
                 : # out-of-sync copy or incorrect data named as copy
-                return 2
+                return 20
             
             if (self.size != other.size) \
                 and (self.checksum == other.checksum) \
                 : # out-of-sync copy or incorrect data named as copy
                 # plus checksum which needs updating 
                 # (different size with same checksum isn't possible)
-                return 22
+                return 21
 
             if (self.size == other.size) \
                 and (self.checksum != other.checksum) \
                 : # possible data corruption, or checksum needs updating
-                return 3
+                return 22
 
         elif (self.checksum == other.checksum) \
             and (self.size != other.size) \
             and (self.name != other.name) \
             : # possible checksum collision
-            return 4
+            return 30
 
         else:      # apparently unrelated files (different name && checksum && size)
-            return 0
+            return 40
 
 
 class DataValidationFolder:
@@ -768,29 +779,29 @@ def test_data_validation_file():
     self = cls(path=path, checksum=checksum, size=size)
     
     other = cls(path=path, checksum=checksum, size=size)
-    assert (self == self) == -1, "not recognized: self"
+    assert (self == self) == 5, "not recognized: self"
 
     other = cls(path='/tmp2/test.txt', checksum=checksum, size=size)
-    assert (self == other) == 1, "not recgonized: valid copy, not self"
+    assert (self == other) == 10, "not recgonized: valid copy, not self"
 
     other = cls(path='/tmp2/test2.txt', checksum=checksum, size=size)
     assert (self == other) == 11, "not recognized: valid copy, different name"
 
     other = cls(path='/tmp2/test.txt', checksum='87654321', size=20)
-    assert (self == other) == 2, "not recognized: out-of-sync copy"
+    assert (self == other) == 20, "not recognized: out-of-sync copy"
     
     other = cls(path='/tmp2/test.txt', checksum=checksum, size=20)
-    assert (self == other) == 22, "not recognized: out-of-sync copy with incorrect checksum"
+    assert (self == other) == 21, "not recognized: out-of-sync copy with incorrect checksum"
     #* note checksum is equal, which could occur if it hasn't been updated in db
 
     other = cls(path='/tmp2/test.txt', checksum='87654321', size=size)
-    assert (self == other) == 3, "not recognized: corrupt copy"
+    assert (self == other) == 22, "not recognized: corrupt copy"
     
     other = cls(path='/tmp/test2.txt', checksum=checksum, size=20)
-    assert (self == other) == 4, "not recognized: checksum collision"
+    assert (self == other) == 30, "not recognized: checksum collision"
 
     other = cls(path='/tmp/test2.txt', checksum='87654321', size=20)
-    assert (self == other) == 0, "not recognized: unrelated file"
+    assert (self == other) == 40, "not recognized: unrelated file"
 
 
 test_data_validation_file()
