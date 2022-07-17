@@ -402,7 +402,7 @@ class DataValidationFile(abc.ABC):
             : # possible checksum collision
             return self.__class__.Match.CHECKSUM_COLLISION.value
 
-        else:      
+        else:
             # apparently unrelated files (different name && checksum && size)
             return self.__class__.Match.UNRELATED.value
 
@@ -539,7 +539,8 @@ class DataValidationDB(abc.ABC):
                     file: DataValidationFile,
                     path: str = None,
                     size: int = None,
-                    checksum: str = None) -> List[DataValidationFile]:
+                    checksum: str = None,
+                    match_type: int = None) -> List[DataValidationFile]:
         """search database for entries that match any of the given arguments 
         """
         raise NotImplementedError
@@ -581,7 +582,9 @@ class ShelveDataValidationDB(DataValidationDB):
                     file: DataValidationFile = None,
                     path: str = None,
                     size: int = None,
-                    checksum: str = None) -> List[DataValidationFile]:
+                    checksum: str = None,
+                    match_type: int = None) -> List[DataValidationFile]:
+        # TODO add match_type to filter   [i for i,x in enumerate(L) if x==Perm.ValidBackup]
         """search database for entries that match any of the given arguments 
         """
         if not file:
@@ -714,7 +717,7 @@ class CRC32JsonDataValidationDB(DataValidationDB):
                             self.add_file(file=file)
                     except ValueError as e:
                         print('skipping file with no session_id')
-                        # return
+                                                                                   # return
 
     def save(self):
         """ save the database to disk as json file """
@@ -762,13 +765,17 @@ class CRC32JsonDataValidationDB(DataValidationDB):
         self.db.append(file)
         print(f'added {file.session.folder}/{file.name} to database (not saved)')
 
+    #TODO update to classmethod like ShelveDB
     def get_matches(self,
                     file: DataValidationFile = None,
                     path: str = None,
                     size: int = None,
-                    checksum: str = None) -> List[DataValidationFile]:
+                    checksum: str = None,
+                    match_type: int = None) -> List[DataValidationFile]:
         """search database for entries that match any of the given arguments 
         """
+        if not file:
+            file = self.DVFile(path=path, checksum=checksum, size=size)
         #! for now we only return equality of File(checksum + size)
         # or partial matches based on other input arguments
 
