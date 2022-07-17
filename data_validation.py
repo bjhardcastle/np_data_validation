@@ -116,6 +116,9 @@ class Session:
     #   )
     #   session.id
     #   >>> "1234566789"
+    id = None
+    mouse = None
+    date = None
 
     def __init__(self, path: str):
         if not isinstance(path, str):
@@ -148,6 +151,8 @@ class Session:
 
 class SessionFile:
     """ Represents a single file belonging to a neuropixels ecephys session """
+
+    session = None
 
     def __init__(self, path: str):
         """ from the complete file path we can extract some information upon
@@ -315,7 +320,7 @@ class DataValidationFile(abc.ABC):
     @checksum.setter
     def checksum(self, value: str):
         if self.__class__.checksum_validate(value):
-            print(f"setting {self.checksum_name} checksum: {value}")
+            # print(f"setting {self.checksum_name} checksum: {value}")
             self._checksum = value
         else:
             raise ValueError(f"{self.__class__}: trying to set an invalid {self.checksum_name} checksum")
@@ -328,12 +333,12 @@ class DataValidationFile(abc.ABC):
             if self.name == other.name:
                 return self.checksum < other.checksum \
                     or self.size < other.size
-            else: 
+            else:
                 return self.name < other.name
         else:
             return self.checksum < other.checksum \
                 or self.size < other.size
-    
+
     def __eq__(self, other):
         # print("Testing checksum equality and filesize equality:")
         # if (self.checksum == other.checksum and self.size == other.size) \
@@ -366,11 +371,11 @@ class DataValidationFile(abc.ABC):
                 and (self.checksum != other.checksum) \
                 : # out-of-sync copy or incorrect data named as copy
                 return 20
-            
+
             if (self.size != other.size) \
                 and (self.checksum == other.checksum) \
                 : # out-of-sync copy or incorrect data named as copy
-                # plus checksum which needs updating 
+                # plus checksum which needs updating
                 # (different size with same checksum isn't possible)
                 return 21
 
@@ -532,16 +537,27 @@ class ShelveDataValidationDB(DataValidationDB):
     A database that stores data in a shelve database
     """
     DVFile: DataValidationFile = CRC32DataValidationFile
-    db = "shelve_by_session"
-    # key = session.folder
+    db = "shelve_by_session_id"
 
     @classmethod
-    def add_file(cls, file: DataValidationFile):
+    def add_file(
+        cls,
+        file: DataValidationFile = None,
+        path: str = None,
+        size: int = None,
+        checksum: str = None,
+    ):
+        """ add an entry to the database """
+        if not file:
+            file = cls.DVFile(path=path, size=size, checksum=checksum)
+
+        key = file.session.id
+
         with shelve.open(cls.db, writeback=True) as db:
-            if file.session.folder in db:
-                db[file.session.folder].append(file)
+            if key in db:
+                db[key].append(file)
             else:
-                db[file.session.folder] = List(file)
+                db[key] = [file]
 
     # @classmethod
     # def save(cls):
@@ -549,15 +565,20 @@ class ShelveDataValidationDB(DataValidationDB):
 
     @classmethod
     def get_matches(cls,
-                    file: DataValidationFile,
+                    file: DataValidationFile = None,
                     path: str = None,
                     size: int = None,
                     checksum: str = None) -> List[DataValidationFile]:
         """search database for entries that match any of the given arguments 
         """
-        with shelve.open(cls.db, writeback=True) as db:
-            if file.session.folder in db:
-                return [f for f in db[file.session.folder] if file == f]
+        if not file:
+            file = cls.DVFile(path=path, size=size, checksum=checksum)
+
+        key = file.session.id
+
+        with shelve.open(cls.db, writeback=False) as db:
+            if key in db:
+                return [f == file for f in db[key]]
 
         # for key in self.db:
         #     if path is not None and key != path:
@@ -680,7 +701,7 @@ class CRC32JsonDataValidationDB(DataValidationDB):
                             self.add_file(file=file)
                     except ValueError as e:
                         print('skipping file with no session_id')
-                        # return
+                                                                                   # return
 
     def save(self):
         """ save the database to disk as json file """
@@ -765,19 +786,23 @@ class CRC32JsonDataValidationDB(DataValidationDB):
 
 def test_data_validation_file():
     """ test the data validation file class """
+
     class Test(DataValidationFile):
-        def valid(path): return True
+
+        def valid(path):
+            return True
+
         checksum_generator = "12345678"
         checksum_test = None
         checksum_validate = valid
 
     cls = Test
     path = '/tmp/test.txt'
-    checksum='12345678'
+    checksum = '12345678'
     size = 10
 
     self = cls(path=path, checksum=checksum, size=size)
-    
+
     other = cls(path=path, checksum=checksum, size=size)
     assert (self == self) == 5, "not recognized: self"
 
@@ -789,14 +814,14 @@ def test_data_validation_file():
 
     other = cls(path='/tmp2/test.txt', checksum='87654321', size=20)
     assert (self == other) == 20, "not recognized: out-of-sync copy"
-    
+
     other = cls(path='/tmp2/test.txt', checksum=checksum, size=20)
     assert (self == other) == 21, "not recognized: out-of-sync copy with incorrect checksum"
     #* note checksum is equal, which could occur if it hasn't been updated in db
 
     other = cls(path='/tmp2/test.txt', checksum='87654321', size=size)
     assert (self == other) == 22, "not recognized: corrupt copy"
-    
+
     other = cls(path='/tmp/test2.txt', checksum=checksum, size=20)
     assert (self == other) == 30, "not recognized: checksum collision"
 
