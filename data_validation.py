@@ -37,7 +37,7 @@ import tempfile
 import zlib
 from multiprocessing.sharedctypes import Value
 from sqlite3 import dbapi2
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 from warnings import WarningMessage
 
 try:
@@ -237,19 +237,6 @@ class SessionFile:
         return self.session.id < other.session.id
 
 
-class DataValidationFolder:
-    """ 
-    represents a folder for which we want to checksum the contents and add to database
-    """
-    #* connect to database
-    #* methods :
-    #* __init__ check is folder, exists
-    #*       possibly add all files in subfolders as DataValidationFile objects
-    #* add_contents_to_database
-    #* generate_large_file_checksums
-    #*
-
-
 class DataValidationFile(abc.ABC):
     """ Represents a file to be validated
         
@@ -428,15 +415,34 @@ class DataValidationFile(abc.ABC):
 class DataValidationFolder:
 
     def __init__(self, path: str):
+        """ 
+        represents a folder for which we want to checksum the contents and add to database
+        possibly deleting if a valid copy exists elswhere
+        """
+        #* connect to database
+        #* methods :
+        #* __init__ check is folder, exists
+        #*       possibly add all files in subfolders as DataValidationFile objects
+        #* add_contents_to_database
+        #* generate_large_file_checksums
+        #*
 
         # if path is a file we can gain
-        try:
-            self.path = SessionFile(path).parent.as_posix()
-        except ValueError:
-            pass
+        # try:
+        #     self.path = SessionFile(path).parent.as_posix()
+        # except ValueError:
+        #     pass
+
+    DVFile: Type[DataValidationFile] = None
+
+    def report(self):
+        """
+        report on the contents of the folder, compared to database
+        """
+        pass
 
     def add_backup_path(self, path: Union[str, List[str]]):
-        """Store one or more paths to backup folders for the session"""
+        """Store one or more paths to folders containing backups for the session"""
         pass
 
     def clear_dir(self, path: str):
@@ -467,7 +473,6 @@ class CRC32DataValidationFile(DataValidationFile, SessionFile):
         DataValidationFile.__init__(self, path=path, checksum=checksum, size=size)
         # if not hasattr(self, "accessible"):
         #     self.accessible = os.path.exists(self.path)
-
 
 
 class DataValidationDB(abc.ABC):
@@ -574,7 +579,11 @@ class ShelveDataValidationDB(DataValidationDB):
         key = file.session.id
 
         with shelve.open(cls.db, writeback=True) as db:
-            if key in db:
+            if key in db and \
+                [x for x in db[key] if (x == file) == cls.DVFile.Match.SELF] \
+                :
+                pass
+            elif key in db:
                 db[key].append(file)
             else:
                 db[key] = [file]
@@ -608,7 +617,6 @@ class ShelveDataValidationDB(DataValidationDB):
         else:
             return matches
 
-
     def __del__(self):
         self.db.close()
 
@@ -634,13 +642,12 @@ class MongoDataValidationDB(DataValidationDB):
             file = cls.DVFile(path=path, size=size, checksum=checksum)
 
         cls.db.insert_one({
-        "session_id": file.session.id,
-        "path": file.path,
-        "checksum": file.checksum,
-        "size": file.size,
-        "type": file.checksum_name,
+            "session_id": file.session.id,
+            "path": file.path,
+            "checksum": file.checksum,
+            "size": file.size,
+            "type": file.checksum_name,
         })
-
 
     @classmethod
     def get_matches(cls,
@@ -648,7 +655,7 @@ class MongoDataValidationDB(DataValidationDB):
                     path: str = None,
                     size: int = None,
                     checksum: str = None,
-                    match: Union[int,enum.Enum] = None) -> List[DataValidationFile]:
+                    match: Union[int, Type[enum.IntEnum]] = None) -> List[DataValidationFile]:
         """search database for entries that match any of the given arguments 
         """
         if not file:
@@ -656,15 +663,16 @@ class MongoDataValidationDB(DataValidationDB):
 
         # with cls.db as db:
         entries = list(cls.db.find({
-                        "session_id": file.session.id,
-                        }))
+            "session_id": file.session.id,
+        }))
 
-        matches = [cls.DVFile(
-                    path=entry['path'],
-                    checksum=entry['checksum'],
-                    size=entry['size'],
-                    )
-                   for entry in entries]
+        matches = [
+            cls.DVFile(
+                path=entry['path'],
+                checksum=entry['checksum'],
+                size=entry['size'],
+            ) for entry in entries
+        ]
 
         if match and isinstance(match, int) and \
             (match in [x.value for x in cls.DVFile.Match]
@@ -784,7 +792,7 @@ class CRC32JsonDataValidationDB(DataValidationDB):
                             self.add_file(file=file)
                     except ValueError as e:
                         print('skipping file with no session_id')
-                        # return
+                                                                                   # return
 
     def save(self):
         """ save the database to disk as json file """
