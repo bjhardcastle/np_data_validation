@@ -40,6 +40,8 @@ from sqlite3 import dbapi2
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 from warnings import WarningMessage
 
+import pymongo
+
 
 def progressbar(it,
                 prefix="",
@@ -540,7 +542,7 @@ class DataValidationDB(abc.ABC):
                     path: str = None,
                     size: int = None,
                     checksum: str = None,
-                    match_type: int = None) -> List[DataValidationFile]:
+                    match: int = None) -> List[DataValidationFile]:
         """search database for entries that match any of the given arguments 
         """
         raise NotImplementedError
@@ -583,8 +585,7 @@ class ShelveDataValidationDB(DataValidationDB):
                     path: str = None,
                     size: int = None,
                     checksum: str = None,
-                    match_type: int = None) -> List[DataValidationFile]:
-        # TODO add match_type to filter   [i for i,x in enumerate(L) if x==Perm.ValidBackup]
+                    match: int = None) -> List[DataValidationFile]:
         """search database for entries that match any of the given arguments 
         """
         if not file:
@@ -594,17 +595,79 @@ class ShelveDataValidationDB(DataValidationDB):
 
         with shelve.open(cls.db, writeback=False) as db:
             if key in db:
-                return [f == file for f in db[key]]
+                matches = db[key]
+                
+        if match and isinstance(match, int) and \
+            (match in [x.value for x in cls.DVFile.Match]
+             or match in [x.name for x in cls.DVFile.Match]):
+            return [o for o in matches if (o == file) == match]
+        else:
+            return matches
 
-        # for key in self.db:
-        #     if path is not None and key != path:
-        #         continue
-        #     if size is not None and self.db[key].size != size:
-        #         continue
-        #     if checksum is not None and self.db[key].checksum != checksum:
-        #         continue
-        #     matches.append(self.db[key])
-        # return matches
+
+    def __del__(self):
+        self.db.close()
+
+
+class MongoDataValidationDB(DataValidationDB):
+    """
+    A database that stores data in a shelve database
+    """
+    DVFile: DataValidationFile = CRC32DataValidationFile
+    db_address = "mongodb://10.128.50.77:27017/"
+    db = pymongo.MongoClient(db_address).prod.snapshots
+
+    @classmethod
+    def add_file(
+        cls,
+        file: DataValidationFile = None,
+        path: str = None,
+        size: int = None,
+        checksum: str = None,
+    ):
+        """ add an entry to the database """
+        if not file:
+            file = cls.DVFile(path=path, size=size, checksum=checksum)
+
+        cls.db.insert_one({
+        "session_id": file.session.id,
+        "path": file.path,
+        "checksum": file.checksum,
+        "size": file.size,
+        "type": file.checksum_name,
+        })
+
+
+    @classmethod
+    def get_matches(cls,
+                    file: DataValidationFile = None,
+                    path: str = None,
+                    size: int = None,
+                    checksum: str = None,
+                    match: Union[int,enum.Enum] = None) -> List[DataValidationFile]:
+        """search database for entries that match any of the given arguments 
+        """
+        if not file:
+            file = cls.DVFile(path=path, size=size, checksum=checksum)
+
+        # with cls.db as db:
+        entries = list(cls.db.find({
+                        "session_id": file.session.id,
+                        }))
+
+        matches = [cls.DVFile(
+                    path=entry['path'],
+                    checksum=entry['checksum'],
+                    size=entry['size'],
+                    )
+                   for entry in entries]
+
+        if match and isinstance(match, int) and \
+            (match in [x.value for x in cls.DVFile.Match]
+             or match in [x.name for x in cls.DVFile.Match]):
+            return [o for o in matches if (o == file) == match]
+        else:
+            return matches
 
     def __del__(self):
         self.db.close()
@@ -717,7 +780,7 @@ class CRC32JsonDataValidationDB(DataValidationDB):
                             self.add_file(file=file)
                     except ValueError as e:
                         print('skipping file with no session_id')
-                                                                                   # return
+                        # return
 
     def save(self):
         """ save the database to disk as json file """
@@ -771,7 +834,7 @@ class CRC32JsonDataValidationDB(DataValidationDB):
                     path: str = None,
                     size: int = None,
                     checksum: str = None,
-                    match_type: int = None) -> List[DataValidationFile]:
+                    match: int = None) -> List[DataValidationFile]:
         """search database for entries that match any of the given arguments 
         """
         if not file:
@@ -779,7 +842,6 @@ class CRC32JsonDataValidationDB(DataValidationDB):
         #! for now we only return equality of File(checksum + size)
         # or partial matches based on other input arguments
 
-        # TODO return index of match/partial match, plus an enum (or similar) indicating the type of match (see DataValidationDB.__doc__)
         if file and self.db.count(file):
             return [self.db.index(f) for f in self.db if f == file]
 
