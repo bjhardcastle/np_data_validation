@@ -599,7 +599,7 @@ class ShelveDataValidationDB(DataValidationDB):
                 
         if match and isinstance(match, int) and \
             (match in [x.value for x in cls.DVFile.Match]
-             or match in [x.name for x in cls.DVFile.Match]):
+             or match in [x for x in cls.DVFile.Match]):
             return [o for o in matches if (o == file) == match]
         else:
             return matches
@@ -664,7 +664,7 @@ class MongoDataValidationDB(DataValidationDB):
 
         if match and isinstance(match, int) and \
             (match in [x.value for x in cls.DVFile.Match]
-             or match in [x.name for x in cls.DVFile.Match]):
+             or match in [x for x in cls.DVFile.Match]):
             return [o for o in matches if (o == file) == match]
         else:
             return matches
