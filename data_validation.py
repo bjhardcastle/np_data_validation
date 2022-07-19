@@ -40,7 +40,10 @@ from sqlite3 import dbapi2
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 from warnings import WarningMessage
 
-import pymongo
+try:
+    import pymongo
+except ImportError:
+    print("pymongo not installed")
 
 
 def progressbar(it,
@@ -229,9 +232,22 @@ class SessionFile:
             raise ValueError(f"{self.__class__}: path does not contain a session ID {path=}")
 
     def __lt__(self, other):
-        if self.session_id == other.session_id:
+        if self.session.id == other.session.id:
             return self.relative_path < other.relative_path
-        return self.session_id < other.session_id
+        return self.session.id < other.session.id
+
+
+class DataValidationFolder:
+    """ 
+    represents a folder for which we want to checksum the contents and add to database
+    """
+    #* connect to database
+    #* methods :
+    #* __init__ check is folder, exists
+    #*       possibly add all files in subfolders as DataValidationFile objects
+    #* add_contents_to_database
+    #* generate_large_file_checksums
+    #*
 
 
 class DataValidationFile(abc.ABC):
@@ -453,18 +469,6 @@ class CRC32DataValidationFile(DataValidationFile, SessionFile):
         #     self.accessible = os.path.exists(self.path)
 
 
-class DataValidationFolder:
-    """ 
-    represents a folder for which we want to checksum the contents and add to database
-    """
-    #* connect to database
-    #* methods :
-    #* __init__ check is folder, exists
-    #*       possibly add all files in subfolders as DataValidationFile objects
-    #* add_contents_to_database
-    #* generate_large_file_checksums
-    #*
-
 
 class DataValidationDB(abc.ABC):
     """ Represents a database of files with validation metadata
@@ -596,7 +600,7 @@ class ShelveDataValidationDB(DataValidationDB):
         with shelve.open(cls.db, writeback=False) as db:
             if key in db:
                 matches = db[key]
-                
+
         if match and isinstance(match, int) and \
             (match in [x.value for x in cls.DVFile.Match]
              or match in [x for x in cls.DVFile.Match]):
