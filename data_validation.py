@@ -19,6 +19,20 @@ db.add_file(x)
 db.save()
 print(db.path)
 
+
+# applying to a folder
+local = R"C:\Users\ben.hardcastle\Desktop\1190258206_611166_20220708"
+npexp = R"\\w10dtsm18306\neuropixels_data\1190258206_611166_20220708"
+f = dv.DataValidationFolder(local)
+f.db = dv.MongoDataValidationDB
+f.add_folder_to_db(local, generate_large_checksums=False)
+f.add_folder_to_db(npexp, generate_large_checksums=False)
+
+f.add_backup(npexp)
+
+f.validate_backups(verbose=True)
+
+
 # to see large checksum performance (~400GB file)
 db.DVFile.generate_checksum("//allen/programs/mindscope/production/incoming/recording_slot3_2.npx2")
 """
