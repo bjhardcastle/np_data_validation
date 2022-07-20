@@ -30,6 +30,7 @@ import json
 import os
 import pathlib
 import pdb
+import pprint
 import re
 import shelve
 import sys
@@ -131,6 +132,7 @@ class Session:
             raise TypeError(f"{self.__class__} path must be a string")
 
         self.folder = self.__class__.folder(path)
+        # TODO maybe not do this - could be set to class without realizing - just assign for instances
 
         # extract the constituent parts of the session folder
         self.id = self.folder.split('_')[0]
@@ -277,9 +279,10 @@ class DataValidationFile(abc.ABC):
         if path and not isinstance(path, str):
             raise TypeError(f"{self.__class__}: path must be a str pointing to a file: {type(path)=}")
 
+        self.accessible = os.path.exists(path)
         # ensure the path is a file, not directory
         # if the file doesn't exist, we have to assume based on lack of file extension
-        if not os.path.exists(path):
+        if not self.accessible:
             if os.path.splitext(path)[1] == '':
                 is_file = False
             else:
@@ -294,7 +297,7 @@ class DataValidationFile(abc.ABC):
 
         self.name = os.path.basename(self.path)
 
-        if path and not size and os.path.exists(path): # TODO replace exists check, race condition
+        if path and not size and self.accessible: # TODO replace exists check, race condition
             self.size = os.path.getsize(path)
         elif size and isinstance(size, int):
             self.size = size
@@ -348,13 +351,15 @@ class DataValidationFile(abc.ABC):
     @enum.unique
     class Match(enum.IntFlag):
         SELF = 5
+        SELF_NO_CHECKSUM = 55
+        OTHER_NO_CHECKSUM = 555
         VALID_COPY_SAME_NAME = 10
         VALID_COPY_RENAMED = 11
         UNSYNCED_DATA = 20
         UNSYNCED_CHECKSUM = 21
         CORRUPT_DATA = 22
         CHECKSUM_COLLISION = 30
-        UNRELATED = 40
+        UNRELATED = 0
 
     def __eq__(self, other):
         # print("Testing checksum equality and filesize equality:")
@@ -365,6 +370,20 @@ class DataValidationFile(abc.ABC):
             and (self.path == other.path) \
             : # self
             return self.__class__.Match.SELF.value
+
+        elif (self.size == other.size) \
+            and (self.path == other.path) \
+            and (not self.checksum) \
+            and (other.checksum) \
+            : # self without checksum confirmation (self missing)
+            return self.__class__.Match.SELF_NO_CHECKSUM.value
+
+        elif (self.size == other.size) \
+            and (self.path == other.path) \
+            and (self.checksum) \
+            and not (other.checksum) \
+            : # self without checksum confirmation (other missing)
+            return self.__class__.Match.OTHER_NO_CHECKSUM.value
 
         elif (self.checksum == other.checksum) \
             and (self.size == other.size) \
@@ -410,44 +429,6 @@ class DataValidationFile(abc.ABC):
         else:
             # apparently unrelated files (different name && checksum && size)
             return self.__class__.Match.UNRELATED.value
-
-
-class DataValidationFolder:
-
-    def __init__(self, path: str):
-        """ 
-        represents a folder for which we want to checksum the contents and add to database
-        possibly deleting if a valid copy exists elswhere
-        """
-        #* connect to database
-        #* methods :
-        #* __init__ check is folder, exists
-        #*       possibly add all files in subfolders as DataValidationFile objects
-        #* add_contents_to_database
-        #* generate_large_file_checksums
-        #*
-
-        # if path is a file we can gain
-        # try:
-        #     self.path = SessionFile(path).parent.as_posix()
-        # except ValueError:
-        #     pass
-
-    DVFile: Type[DataValidationFile] = None
-
-    def report(self):
-        """
-        report on the contents of the folder, compared to database
-        """
-        pass
-
-    def add_backup_path(self, path: Union[str, List[str]]):
-        """Store one or more paths to folders containing backups for the session"""
-        pass
-
-    def clear_dir(self, path: str):
-        """Clear the contents of a folder if backups exist"""
-        pass
 
 
 class CRC32DataValidationFile(DataValidationFile, SessionFile):
@@ -551,7 +532,7 @@ class DataValidationDB(abc.ABC):
                     path: str = None,
                     size: int = None,
                     checksum: str = None,
-                    match: int = None) -> List[DataValidationFile]:
+                    match: int = None) -> List[DataValidationFile]: #, Optional[List[int]]:
         """search database for entries that match any of the given arguments 
         """
         raise NotImplementedError
@@ -598,7 +579,7 @@ class ShelveDataValidationDB(DataValidationDB):
                     path: str = None,
                     size: int = None,
                     checksum: str = None,
-                    match: int = None) -> List[DataValidationFile]:
+                    match: int = None) -> List[DataValidationFile]: #, Optional[List[int]]:
         """search database for entries that match any of the given arguments 
         """
         if not file:
@@ -613,9 +594,9 @@ class ShelveDataValidationDB(DataValidationDB):
         if match and isinstance(match, int) and \
             (match in [x.value for x in cls.DVFile.Match]
              or match in [x for x in cls.DVFile.Match]):
-            return [o for o in matches if (o == file) == match]
+            return [o for o in matches if (o == file) == match], [(o == file) for o in matches]
         else:
-            return matches
+            return matches, [(o == file) for o in matches]
 
     def __del__(self):
         self.db.close()
@@ -655,7 +636,7 @@ class MongoDataValidationDB(DataValidationDB):
                     path: str = None,
                     size: int = None,
                     checksum: str = None,
-                    match: Union[int, Type[enum.IntEnum]] = None) -> List[DataValidationFile]:
+                    match: Union[int, Type[enum.IntEnum]] = None) -> List[DataValidationFile]: #, Optional[List[int]]:
         """search database for entries that match any of the given arguments 
         """
         if not file:
@@ -664,7 +645,7 @@ class MongoDataValidationDB(DataValidationDB):
         # with cls.db as db:
         entries = list(cls.db.find({
             "session_id": file.session.id,
-        }))
+        }))                                  # .distinct("_id")
 
         matches = [
             cls.DVFile(
@@ -676,10 +657,14 @@ class MongoDataValidationDB(DataValidationDB):
 
         if match and isinstance(match, int) and \
             (match in [x.value for x in cls.DVFile.Match]
-             or match in [x for x in cls.DVFile.Match]):
-            return [o for o in matches if (o == file) == match]
+            or match in [x for x in cls.DVFile.Match]):
+
+            return [o for o in matches if (o == file) == match > 0], \
+                [(o == file) for o in matches if (o == file) == match > 0]
+
         else:
-            return matches
+            return [o for o in matches if (o == file) > 0], \
+                [(o == file) for o in matches if (o == file) > 0]
 
     def __del__(self):
         self.db.close()
@@ -878,6 +863,210 @@ class CRC32JsonDataValidationDB(DataValidationDB):
                 ]
 
 
+class DataValidationFolder:
+
+    db: Type[DataValidationDB] = None
+    backups: List[str] = None
+
+    def __init__(self, path: str):
+        """ 
+        represents a folder for which we want to checksum the contents and add to database
+        possibly deleting if a valid copy exists elswhere
+        """
+        #* methods :
+        #* __init__ check is folder, exists
+        #*       possibly add all files in subfolders as DataValidationFile objects
+        #* add_contents_to_database
+        #* generate_large_file_checksums
+        #*
+
+        # extract the session ID from anywhere in the path
+        self.session = Session(path)
+
+        # ensure the path is a directory, not a file
+        # if the file doesn't exist, we have to assume based on lack of file extension
+        self.accessible = os.path.exists(path)
+        if not self.accessible:
+            if os.path.splitext(path)[1] == '':
+                is_file = False
+            else:
+                is_file = True
+        else:
+            is_file = os.path.isfile(path)
+
+        if is_file:
+            raise ValueError(f"{self.__class__}: path must point to a folder {path=}")
+        else:
+            self.path = pathlib.Path(path).as_posix()
+
+        # TODO lookup all possible locations for same session folder name
+
+    def add_backup(self, path: Union[str, List[str]]):
+        """Store one or more paths to folders containing backups for the session"""
+        if path and isinstance(path, str):
+            path = [path]
+        elif path and isinstance(path, List) and path[0] != '': # inequality checks for str type and existence
+            pass
+        else:
+            raise TypeError(f"{self.__class__}: path must be a string or list of strings")
+
+        # add to list of backup locations as a Folder type object of the same class
+        if not self.backups:
+            self.backups = []
+        for p in path:
+            self.backups.append(self.__class__(p))
+
+    def validate_backups(self, verbose: bool = True):
+        """go through each file in the current folder (self) and look for valid copies in the backup folders"""
+        if not self.backups:
+            Warning(f"{self.__class__}: no backup locations specified")
+            pass
+        if not self.accessible:
+            Warning(f"{self.__class__}: folder not accessible")
+            # TODO implement standard file list for comparison without accessbile folder
+            pass
+        
+        results = {}
+        for root, _, files in os.walk(self.path):
+            for f in files:
+                # create new file object
+                try:
+                    file = self.db.DVFile(path=os.path.join(root, f))
+                except [ValueError, TypeError]:
+                    print(f"{self.__class__}: invalid file, not added to database: {f=}")
+                    continue
+
+                if not file.checksum:
+                    file.checksum = file.generate_checksum(file.path)
+
+                # check whether any similar files exist in current database
+                matches, match_types = self.db.get_matches(file=file)
+
+                # filter for matches with self and unrelated files
+                hits = [x for i, x in enumerate(matches) if match_types[i] >= file.Match.VALID_COPY_SAME_NAME]
+
+                # remove duplicates from hits (ie comparisons (file v other) that return the same value)
+                extant_unique_hits = []
+                while hits:
+                    hit = hits.pop()
+                    if hit.accessible:
+                        for h in hits:
+                            if (h.size == hit.size) \
+                            and (h.path == hit.path) \
+                            and (h.checksum == hit.checksum) \
+                            :
+                                hits.remove(h)
+                        extant_unique_hits.append(hit)
+                    else:
+                        pass
+
+                if extant_unique_hits:
+                    results.update({file.name: [file.Match(file == f).name for f in extant_unique_hits]})
+                    if verbose:
+                        # print summary of file comparisons
+                        report(file, extant_unique_hits)
+                else:
+                    results.update({file.name: "no matches"})
+                    if verbose:
+                        print(f"no matches found for {file.parent}/{file.name}")
+                
+            # aggregate results and print summary
+            pprint.pprint(results)
+
+    def add_folder_to_db(self, path: str = None, generate_large_checksums: bool = True):
+        """add all contents of instance folder or a specified folder (all files in all subfiles) to the database
+        """
+        upper_size_limit = 1024**3 * 10 # 10GB - files above this won't have checksums generated unless generate_large_checksums == True
+
+        if not self.db:
+            raise ValueError(f"{self.__class__}: no database specified")
+
+        if not path and self.accessible:
+            # no folder specified, assume the current (self) folder is the target
+            path = self.path
+        elif path and os.path.exists(path):
+            pass
+        else:
+            # no accessible folder supplied
+            Warning(f"{self.__class__}: add_folder_to_db not implemented, not accessible: {path=}")
+            pass
+
+        for root, _, files in os.walk(path):
+            for f in files:
+
+                # create new file object
+                try:
+                    file = self.db.DVFile(path=os.path.join(root, f))
+                except (ValueError, TypeError):
+                    print(f"{self.__class__}: invalid file, not added to database: {file=}")
+                    continue
+
+                # check whether it exists in current database already
+                matches, match_type = self.db.get_matches(file=file)
+
+                #* move the following to some external function that applies a common logic for tasks
+                # apply_strategy(file, strategy='add_to_db'/'delete_if_backed_up')
+                if file.Match.SELF in match_type:
+                    # we've re-checksummed the file and it matches a db entry
+                    continue
+
+                elif file.Match.OTHER_NO_CHECKSUM in match_type:
+                    # we have a checksum, but the db entry doesnt:
+                    self.db.add_file(file=file)
+                    continue
+
+                elif file.Match.SELF_NO_CHECKSUM in match_type:
+                    # we have no checksum, but the db entry does:
+                    #! choice here is to accept a possibly stale checksum or regenerate one
+                    # TODO compare date of checksum in db to some age limit
+                    # for now, we'll accept the db checksum if the file size is over a size threshold
+                    if file.size > upper_size_limit and generate_large_checksums:
+                        file.checksum = file.generate_checksum(file.path)
+                        self.db.add_file(file=file)
+                        continue
+                    else:
+                        # keep the checksum already in the db
+                        continue
+
+                elif file.checksum: # there are no entries in the db for this file with the same path
+                    self.db.add_file(file=file)
+                    continue
+
+                elif file.size < file.checksum_threshold or generate_large_checksums:
+                    file.checksum = file.generate_checksum(file.path)
+                    self.db.add_file(file=file)
+                    continue
+
+                else:
+                    # file is too large, no checksum generated
+                    continue
+
+    #TODO for implementation, add a backup database to check, to save generating twice
+    def clear_dir(self, path: str):
+        """Clear the contents of a folder if backups exist"""
+        pass
+
+
+class SyncDataValidationDB:
+
+    DVDB: List[DataValidationDB] = None
+
+    @classmethod
+    def get_matches_in_all(file: DataValidationFile):
+        # for each in list
+        # check type matches DB file type,
+        # call each db's 'get_matches' method and aggregate results
+        raise NotImplementedError
+
+    @classmethod
+    def sync_all():
+        # for each file in each db, grab all the files and add to all other dbs
+        # - needs a get_all method in each db class
+        #   - feed in number of entries to read -> transfer in pieces
+        # - needs a
+        raise NotImplementedError
+
+
 def test_data_validation_file():
     """ test the data validation file class """
 
@@ -920,7 +1109,56 @@ def test_data_validation_file():
     assert (self == other) == 30, "not recognized: checksum collision"
 
     other = cls(path='/tmp/test2.txt', checksum='87654321', size=20)
-    assert (self == other) == 40, "not recognized: unrelated file"
+    assert (self == other) == 0, "not recognized: unrelated file"
 
 
 test_data_validation_file()
+
+
+def report(file: DataValidationFile, comparisons: List[DataValidationFile]):
+    """ report on the contents of the folder, compared to database
+        """
+    # TODO write to a file in folder instead of printing to stdout
+
+    if isinstance(comparisons, DataValidationFile):
+        comparisons = [comparisons]
+
+    column_width = 120 # for display of line separators
+
+    def display_name(DVFile: DataValidationFile) -> str:
+        min_len_filename = 50
+        disp = f"{DVFile.parent}/{DVFile.name}"
+        if len(disp) < min_len_filename:
+            disp += ' ' * (min_len_filename - len(disp))
+        return disp
+
+    def display_str(label: str, DVFile: DataValidationFile) -> str:
+        disp = f"{label} : {display_name(DVFile)} | {DVFile.checksum or '  none  '} | {DVFile.size or '??'} bytes"
+        return disp
+
+    print("#" * column_width)
+    print("\n")
+    print(f"subject: {file.path}")
+    print("\n")
+    print("-" * column_width)
+
+    folder = file.path.split(file.name)[0]
+    compare_folder = ""
+    for other in comparisons:
+        # print new header for each comparison with a new folder
+        if compare_folder != other.path.split(other.name)[0]:
+            compare_folder = other.path.split(other.name)[0]
+            # print("*" * column_width)
+            print("folder comparison for")
+            print(f"subject : {folder}")
+            print(f"other   : {compare_folder}")
+            # print("*" * column_width)
+            print("-" * column_width)
+
+        print(f"Result  : {file.Match(file==other).name}")
+        print(display_str("subject", file))
+        print(display_str("other  ", other))
+        print("-" * column_width)
+
+    print("\n")
+    print("#" * column_width)
