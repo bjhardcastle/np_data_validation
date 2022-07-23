@@ -1,42 +1,41 @@
-""" data integrity database class stuff 
+# -*- coding: utf-8 -*-
+# """
 
+# data integrity database class stuff
 
-some example usage:
+# some example usage:
 
-x = DataValidationFileCRC32(
-    path=
-    R"\\allen\programs\mindscope\workgroups\np-exp\1190290940_611166_20220708\1190258206_611166_20220708_surface-image1-left.png"
-)
-print(f"checksum auto-generated for small files: {x.checksum=})
+# x = DataValidationFileCRC32(
+#     path=
+#     R"\\allen\programs\mindscope\workgroups\np-exp\1190290940_611166_20220708\1190258206_611166_20220708_surface-image1-left.png"
+# )
+# print(f"checksum auto-generated for small files: {x.checksum=})
 
-y = DataValidationFileCRC32(checksum=x.checksum, size=x.size, path="/dir/1190290940_611166_20220708_foo.png")
+# y = DataValidationFileCRC32(checksum=x.checksum, size=x.size, path="/dir/1190290940_611166_20220708_foo.png")
 
-# DataValidationFile objects evaulate to True if they have the same checksum and size
-print(x == y)
+# # DataValidationFile objects evaulate to True if they have the same checksum and size
+# print(x == y)
 
-db = data_validation.CRC32JsonDataValidationDB()
-db.add_file(x)
-db.save()
-print(db.path)
+# db = data_validation.CRC32JsonDataValidationDB()
+# db.add_file(x)
+# db.save()
+# print(db.path)
 
+# # applying to a folder
+# local = R"C:\Users\ben.hardcastle\Desktop\1190258206_611166_20220708"
+# npexp = R"\\w10dtsm18306\neuropixels_data\1190258206_611166_20220708"
+# f = dv.DataValidationFolder(local)
+# f.db = dv.MongoDataValidationDB
+# f.add_folder_to_db(local, generate_large_checksums=False)
+# f.add_folder_to_db(npexp, generate_large_checksums=False)
 
-# applying to a folder
-local = R"C:\Users\ben.hardcastle\Desktop\1190258206_611166_20220708"
-npexp = R"\\w10dtsm18306\neuropixels_data\1190258206_611166_20220708"
-f = dv.DataValidationFolder(local)
-f.db = dv.MongoDataValidationDB
-f.add_folder_to_db(local, generate_large_checksums=False)
-f.add_folder_to_db(npexp, generate_large_checksums=False)
+# f.add_backup(npexp)
 
-f.add_backup(npexp)
+# f.validate_backups(verbose=True)
 
-f.validate_backups(verbose=True)
-
-
-# to see large checksum performance (~400GB file)
-db.DVFile.generate_checksum("//allen/programs/mindscope/production/incoming/recording_slot3_2.npx2")
-"""
-
+# # to see large checksum performance (~400GB file)
+# db.DVFile.generate_checksum("//allen/programs/mindscope/production/incoming/recording_slot3_2.npx2)
+# """
 import abc
 import dataclasses
 import enum
@@ -148,10 +147,13 @@ class Session:
         self.folder = self.__class__.folder(path)
         # TODO maybe not do this - could be set to class without realizing - just assign for instances
 
-        # extract the constituent parts of the session folder
-        self.id = self.folder.split('_')[0]
-        self.mouse = self.folder.split('_')[1]
-        self.date = self.folder.split('_')[2]
+        if self.folder:
+            # extract the constituent parts of the session folder
+            self.id = self.folder.split('_')[0]
+            self.mouse = self.folder.split('_')[1]
+            self.date = self.folder.split('_')[2]
+        else:
+            raise ValueError(f"{self.__class__} path must contain a valid session folder")
 
     @classmethod
     def folder(cls, path) -> Union[str, None]:
@@ -464,8 +466,14 @@ class CRC32DataValidationFile(DataValidationFile, SessionFile):
 
     def __init__(self, path: str = None, checksum: str = None, size: int = None):
         # if the path doesn't contain a session_id, this will raise an error:
+        # try:
         SessionFile.__init__(self, path)
         DataValidationFile.__init__(self, path=path, checksum=checksum, size=size)
+        # except AttributeError:
+        #     print(f"{self.__class__}: no session dir in path")
+        #     clear(self)
+        #     return
+
         # if not hasattr(self, "accessible"):
         #     self.accessible = os.path.exists(self.path)
 
@@ -772,8 +780,10 @@ class CRC32JsonDataValidationDB(DataValidationDB):
                 for item in items:
                     keys = items[item].keys()
 
-                    if 'posix' in keys or 'linux' in keys:
-                        path = items[item]['posix' or 'linux']
+                    if 'linux' in keys:
+                        path = items[item]['linux']
+                    elif 'posix' in keys:
+                        path = items[item]['posix']
                     elif 'windows' in keys:
                         path = items[item]['windows']
                     else:
@@ -939,7 +949,7 @@ class DataValidationFolder:
             Warning(f"{self.__class__}: folder not accessible")
             # TODO implement standard file list for comparison without accessbile folder
             pass
-        
+
         results = {}
         for root, _, files in os.walk(self.path):
             for f in files:
@@ -983,7 +993,7 @@ class DataValidationFolder:
                     results.update({file.name: "no matches"})
                     if verbose:
                         print(f"no matches found for {file.parent}/{file.name}")
-                
+
             # aggregate results and print summary
             pprint.pprint(results)
 
