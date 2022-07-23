@@ -1044,7 +1044,7 @@ class DataValidationFolder:
                     if verbose:
                         print(f"no matches found for {file.parent}/{file.name}")
                     continue # no verifiable backups found
-                
+
                 for backup in self.backups:
                     for euh in extant_unique_hits:
                         if backup.path in euh.path:
@@ -1215,8 +1215,8 @@ def test_data_validation_file():
 test_data_validation_file()
 
 
-def clear_dir(path: str = None, 
-              include_session_subfolders: bool = False, 
+def clear_dir(path: str = None,
+              include_session_subfolders: bool = False,
               generate_large_checksums: bool = False,
               upper_size_limit = 1024 ** 3 * 5,
               ):
@@ -1229,11 +1229,11 @@ def clear_dir(path: str = None,
     def npexp(session_folder: DataValidationFolder):
         npexp_root = R"//allen/programs/mindscope/workgroups/np-exp"
         return npexp_root + '/' + session_folder.session.folder
-    
+
     def lims(session_folder: DataValidationFolder):
         lims_root = R"//allen/programs/mindscope/workgroups/lims"
         return lims_root + '/' + session_folder.session.folder
-    
+
     for f in [folder for folder in pathlib.Path(path).iterdir() if folder.is_dir()]:
         if f.is_dir():
 
@@ -1244,7 +1244,7 @@ def clear_dir(path: str = None,
                 session_folder.include_subfolders = include_session_subfolders
                 session_folder.generate_large_checksums = generate_large_checksums
                 session_folder.upper_size_limit = upper_size_limit
-                
+
                 files = session_folder.add_folder_to_db(path=path)
 
                 # as a backup, send to Shelvedb
@@ -1252,21 +1252,25 @@ def clear_dir(path: str = None,
                     for file in files:
                         db_s.add_file(file)
 
-                
+
                 backup_folder = DataValidationFolder(npexp(session_folder))
                 if backup_folder.accessible:
                     backup_folder.db = db_m
                     backup_folder.include_subfolders = include_session_subfolders
                     backup_folder.generate_large_checksums = generate_large_checksums
                     backup_folder.upper_size_limit = upper_size_limit
-                
+
                     backups = backup_folder.add_folder_to_db(npexp(session_folder))
-                    
+                    # as a backup, send to Shelvedb
+                    if backups:
+                        for b in backups:
+                            db_s.add_file(b)
+                            
                 # check if there are any valid backups
                 session_folder.add_backup(npexp(session_folder))
                 # session_folder.add_backup(lims(session_folder))
                 session_folder.validate_backups()
-                
+
             except Exception as e:
                 warnings.warn(f"Error in {f.as_posix()}: {e}")
                 continue
