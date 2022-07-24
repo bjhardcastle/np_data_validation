@@ -367,22 +367,26 @@ class DataValidationFile(abc.ABC):
 
     @enum.unique
     class Match(enum.IntFlag):
-        SELF = 5
-        SELF_NO_CHECKSUM = 55
-        OTHER_NO_CHECKSUM = 555
-        VALID_COPY_SAME_NAME = 10
-        VALID_COPY_RENAMED = 11
-        UNSYNCED_DATA = 20
-        UNSYNCED_CHECKSUM = 21
-        CORRUPT_DATA = 22
-        CHECKSUM_COLLISION = 30
+        """Integer enum for DataValidationFile equality - test for (file==other)>0 for
+        matches of interest and >20 for valid backups"""
         UNRELATED = 0
+        UNKNOWN = -1
+        CHECKSUM_COLLISION = 3
+        SELF = 5
+        SELF_NO_CHECKSUM = 6
+        OTHER_NO_CHECKSUM = 7
+        UNSYNCED_DATA = 11
+        UNSYNCED_CHECKSUM = 12
+        CORRUPT_DATA = 13
+        VALID_COPY_SAME_NAME = 21
+        VALID_COPY_RENAMED = 22
 
     def __eq__(self, other):
-        # print("Testing checksum equality and filesize equality:")
-        # if (self.checksum == other.checksum and self.size == other.size) \
-        # or (self.checksum == other.checksum and self.size == other.size and self.path == other.path):
-        if self.checksum and (self.checksum == other.checksum) \
+        """Test equality of two DataValidationFile objects"""
+        # size and path fields are required entries in a DVF entry in database -
+        # checksum is optional, so we need to check for it in both objects
+        if self.checksum and other.checksum \
+            and (self.checksum == other.checksum) \
             and (self.size == other.size) \
             and (self.path == other.path) \
             : # self
@@ -402,21 +406,24 @@ class DataValidationFile(abc.ABC):
             : # self without checksum confirmation (other missing)
             return self.__class__.Match.OTHER_NO_CHECKSUM.value
 
-        elif (self.checksum == other.checksum) \
+        elif self.checksum and other.checksum \
+            and (self.checksum == other.checksum) \
             and (self.size == other.size) \
             and (self.name == other.name) \
             and (self.path != other.path) \
             : # valid copy, not self
             return self.__class__.Match.VALID_COPY_SAME_NAME.value
 
-        elif (self.checksum == other.checksum) \
+        elif self.checksum and other.checksum \
+            and (self.checksum == other.checksum) \
             and (self.size == other.size) \
             and (self.name != other.name) \
             and (self.path != other.path) \
             : # valid copy, different name
             return self.__class__.Match.VALID_COPY_RENAMED.value
 
-        elif (self.name == other.name) \
+        elif self.checksum and other.checksum \
+            and (self.name == other.name) \
             and (self.path != other.path) \
             : # invalid copy ( multiple categories)
 
@@ -437,15 +444,22 @@ class DataValidationFile(abc.ABC):
                 : # possible data corruption, or checksum needs updating
                 return self.__class__.Match.CORRUPT_DATA.value
 
-        elif (self.checksum == other.checksum) \
+        elif self.checksum and other.checksum \
+            and (self.checksum == other.checksum) \
             and (self.size != other.size) \
             and (self.name != other.name) \
             : # possible checksum collision
             return self.__class__.Match.CHECKSUM_COLLISION.value
 
-        else:
-            # apparently unrelated files (different name && checksum && size)
+        elif self.checksum and other.checksum \
+            and (self.checksum != other.checksum) \
+            and (self.size != other.size) \
+            and (self.name != other.name) \
+            :# apparently unrelated files (different name && checksum && size)
             return self.__class__.Match.UNRELATED.value
+
+        else: # insufficient information
+            return self.__class__.Match.UNKNOWN.value
 
 
 class CRC32DataValidationFile(DataValidationFile, SessionFile):
@@ -1187,29 +1201,29 @@ def test_data_validation_file():
     self = cls(path=path, checksum=checksum, size=size)
 
     other = cls(path=path, checksum=checksum, size=size)
-    assert (self == self) == 5, "not recognized: self"
+    assert (self == self) == self.Match.SELF, "not recognized: self"
 
     other = cls(path='/tmp2/test.txt', checksum=checksum, size=size)
-    assert (self == other) == 10, "not recgonized: valid copy, not self"
+    assert (self == other) == self.Match.VALID_COPY_SAME_NAME, "not recgonized: valid copy, not self"
 
     other = cls(path='/tmp2/test2.txt', checksum=checksum, size=size)
-    assert (self == other) == 11, "not recognized: valid copy, different name"
+    assert (self == other) == self.Match.VALID_COPY_RENAMED, "not recognized: valid copy, different name"
 
     other = cls(path='/tmp2/test.txt', checksum='87654321', size=20)
-    assert (self == other) == 20, "not recognized: out-of-sync copy"
+    assert (self == other) == self.Match.UNSYNCED_DATA, "not recognized: out-of-sync copy"
 
     other = cls(path='/tmp2/test.txt', checksum=checksum, size=20)
-    assert (self == other) == 21, "not recognized: out-of-sync copy with incorrect checksum"
+    assert (self == other) == self.Match.UNSYNCED_CHECKSUM, "not recognized: out-of-sync copy with incorrect checksum"
     #* note checksum is equal, which could occur if it hasn't been updated in db
 
     other = cls(path='/tmp2/test.txt', checksum='87654321', size=size)
-    assert (self == other) == 22, "not recognized: corrupt copy"
+    assert (self == other) == self.Match.CORRUPT_DATA, "not recognized: corrupt copy"
 
     other = cls(path='/tmp/test2.txt', checksum=checksum, size=20)
-    assert (self == other) == 30, "not recognized: checksum collision"
+    assert (self == other) == self.Match.CHECKSUM_COLLISION, "not recognized: checksum collision"
 
     other = cls(path='/tmp/test2.txt', checksum='87654321', size=20)
-    assert (self == other) == 0, "not recognized: unrelated file"
+    assert (self == other) == self.Match.UNRELATED, "not recognized: unrelated file"
 
 
 test_data_validation_file()
@@ -1245,7 +1259,7 @@ def clear_dir(path: str = None,
                 session_folder.generate_large_checksums = generate_large_checksums
                 session_folder.upper_size_limit = upper_size_limit
 
-                files = session_folder.add_folder_to_db(path=path)
+                files = session_folder.add_folder_to_db()
 
                 # as a backup, send to Shelvedb
                 if files:
@@ -1260,12 +1274,12 @@ def clear_dir(path: str = None,
                     backup_folder.generate_large_checksums = generate_large_checksums
                     backup_folder.upper_size_limit = upper_size_limit
 
-                    backups = backup_folder.add_folder_to_db(npexp(session_folder))
+                    backups = backup_folder.add_folder_to_db()
                     # as a backup, send to Shelvedb
                     if backups:
                         for b in backups:
                             db_s.add_file(b)
-                            
+
                 # check if there are any valid backups
                 session_folder.add_backup(npexp(session_folder))
                 # session_folder.add_backup(lims(session_folder))
