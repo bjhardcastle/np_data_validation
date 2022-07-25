@@ -1178,17 +1178,16 @@ class DataValidationFolder:
                         def display_str(label: str, DVFile: DataValidationFile) -> str:
                             disp = f"{label} : {display_name(DVFile)} | {DVFile.checksum or '  none  '} | {DVFile.size or '??'} bytes"
                             return disp
-                        for i, euh in enumerate(extant_unique_hits):
+                        for euh in extant_unique_hits:
                             # check if the entry's path is in the backup folder
                             if backup in euh.path and (file == euh) >= file.Match.VALID_COPY_SAME_NAME:
 
-                                # delete the file from the backup folder
-                                if i == 0:
-                                    logging.info(display_str(f"{file.Match.SELF.name} (DELETED)", file))
-                                
+                                # delete the file from the Validation folder                            
                                 if os.path.exists(file.path):
+                                    logging.info(display_str(f"{file.Match.SELF.name} (DELETED)", file))
                                     pathlib.Path(file.path).unlink()
-
+                                    
+                                # report on extant backup:
                                 logging.info(display_str(f"{file.Match(file==euh).name}", euh))
 
                                 # return
