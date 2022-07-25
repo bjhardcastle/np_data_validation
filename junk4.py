@@ -37,14 +37,14 @@ import data_validation as dv
 import timing
 
 for p in [
-    "//W10DTSM112719/neuropixels_data",
-    "//w10dtsm18306/neuropixels_data",
+    "A:/",
+    "B:/",
     ]:
     dv.clear_dir(
         path=p,
-        include_session_subfolders=False,
+        include_session_subfolders=True,
         generate_large_checksums=True,
         regenerate_large_checksums=False,
-        upper_size_limit=1024**3 * 5,
-        min_age=40, # days
+        upper_size_limit=1024**4 * 5,
+        min_age=0, # days
     )

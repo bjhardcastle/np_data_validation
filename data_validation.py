@@ -9,7 +9,7 @@
 #     path=
 #     R"\\allen\programs\mindscope\workgroups\np-exp\1190290940_611166_20220708\1190258206_611166_20220708_surface-image1-left.png"
 # )
-# print(f"checksum auto-generated for small files: {x.checksum=})
+# print(f"checksum auto-generated for small files: {x.checksum})
 
 # y = DataValidationFileCRC32(checksum=x.checksum, size=x.size, path="/dir/1190290940_611166_20220708_foo.png")
 
@@ -59,7 +59,7 @@ import zlib
 import inspect
 from multiprocessing.sharedctypes import Value
 from sqlite3 import dbapi2
-from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Type, Union
 
 
 # import yaml
@@ -218,7 +218,7 @@ class SessionFile:
         initialization """
 
         if not isinstance(path, (str, pathlib.Path)):
-            raise TypeError(f"{self.__class__}: path must be a str pointing to a file: {type(path)=}")
+            raise TypeError(f"{self.__class__}: path must be a str pointing to a file: {type(path)}")
         if isinstance(path, pathlib.Path):
             path = str(path)
 
@@ -234,7 +234,7 @@ class SessionFile:
             is_file = os.path.isfile(path)
 
         if not is_file:
-            raise ValueError(f"{self.__class__}: path must point to a file {path=}")
+            raise ValueError(f"{self.__class__}: path must point to a file {path}")
         else:
             self.path = path
 
@@ -257,7 +257,7 @@ class SessionFile:
                     break
                 parts = parts[1:]
             else:
-                raise ValueError(f"{self.__class__}: session_folder not found in path {self.path=}")
+                raise ValueError(f"{self.__class__}: session_folder not found in path {self.path}")
             self.root_path = self.path.split(str(parts[0]))[0]
 
             # if the repository contains session folders, it should contain the
@@ -282,7 +282,7 @@ class SessionFile:
                 self.relative_path = str(session_relative_path)
 
         else:
-            raise ValueError(f"{self.__class__}: path does not contain a session ID {path=}")
+            raise ValueError(f"{self.__class__}: path does not contain a session ID {path}")
 
     def __lt__(self, other):
         if self.session.id == other.session.id:
@@ -328,7 +328,7 @@ class DataValidationFile(abc.ABC):
             raise ValueError(f"{self.__class__}: either path or checksum must be set")
 
         if path and not isinstance(path, str):
-            raise TypeError(f"{self.__class__}: path must be a str pointing to a file: {type(path)=}")
+            raise TypeError(f"{self.__class__}: path must be a str pointing to a file: {type(path)}")
 
         self.accessible = os.path.exists(path)
         # ensure the path is a file, not directory
@@ -342,7 +342,7 @@ class DataValidationFile(abc.ABC):
             is_file = os.path.isfile(path)
 
         if not is_file:
-            raise ValueError(f"{self.__class__}: path must point to a file {path=}")
+            raise ValueError(f"{self.__class__}: path must point to a file {path}")
         else:
             self.path = pathlib.Path(path).as_posix()
 
@@ -963,7 +963,7 @@ class CRC32JsonDataValidationDB(DataValidationDB):
 class DataValidationFolder:
 
     db: Type[DataValidationDB] = None
-    backup_paths: set[str] = set()
+    backup_paths: Set[str] = set()
     generate_large_checksums: bool = True
     regenerate_large_checksums: bool = False
     include_subfolders: bool = True
@@ -999,7 +999,7 @@ class DataValidationFolder:
             is_file = os.path.isfile(path)
 
         if is_file:
-            raise ValueError(f"{self.__class__}: path must point to a folder {path=}")
+            raise ValueError(f"{self.__class__}: path must point to a folder {path}")
         else:
             self.path = pathlib.Path(path).as_posix()
 
@@ -1046,7 +1046,7 @@ class DataValidationFolder:
                 try:
                     file = self.db.DVFile(path=os.path.join(root, f))
                 except [ValueError, TypeError]:
-                    print(f"{self.__class__}: invalid file, not added to database: {f=}")
+                    print(f"{self.__class__}: invalid file, not added to database: {f}")
                     continue
 
                 # generate new checksums for large files if toggled on
@@ -1075,7 +1075,7 @@ class DataValidationFolder:
                     if not all(owc.checksum == others_with_checksum[-1].checksum \
                         for owc in others_with_checksum):
                         logging.warning(
-                            f"{self.__class__}: Skipped: {file.path=} multiple db entries with different checksums")
+                            f"{self.__class__}: Skipped: {file.path} multiple db entries with different checksums")
                         continue
                     else:
                         file = others_with_checksum[-1]
@@ -1089,7 +1089,7 @@ class DataValidationFolder:
                     self.db.add_file(file)
 
                 elif not file.checksum:
-                    print(f"{self.__class__}: {file.path=} large file, not validated")
+                    print(f"{self.__class__}: {file.path} large file, not validated")
                     continue
 
                 # check again in current database for similar files
@@ -1220,7 +1220,7 @@ class DataValidationFolder:
             pass
         else:
             # no accessible folder supplied
-            print(f"{self.__class__}: add_folder_to_db not implemented, not accessible: {path=}")
+            print(f"{self.__class__}: add_folder_to_db not implemented, not accessible: {path}")
             return
 
         file_objects = []
@@ -1237,7 +1237,7 @@ class DataValidationFolder:
             try:
                 file = self.db.DVFile(path=f.as_posix())
             except (ValueError, TypeError):
-                print(f"{self.__class__}: invalid file, not added to database: {f.as_posix()=}")
+                print(f"{self.__class__}: invalid file, not added to database: {f.as_posix()}")
                 continue
 
             # check whether it exists in current database already
@@ -1264,6 +1264,7 @@ class DataValidationFolder:
                 # we have a checksum, but the db entry doesnt:
                 add(file)
                 continue
+            
             elif file.Match.SELF_NO_CHECKSUM in match_type:
                 # we have no checksum, but the db entry does:
                 #! choice here is to accept a possibly stale checksum or regenerate one
@@ -1286,7 +1287,7 @@ class DataValidationFolder:
                 continue
             else:
                 # file is too large, no checksum generated
-                logging.info(f"{self.__class__}: file too large, not added to database: {file.path=}")
+                logging.info(f"{self.__class__}: file too large, not added to database: {file.path}")
                 continue
 
         return file_objects
@@ -1415,12 +1416,12 @@ def clear_dir(
             session_folder.upper_size_limit = upper_size_limit
 
 
-            if not session_folder.session:
-                return
+            if not hasattr(session_folder,'session'):
+                continue
             elif int(session_folder.session.date) \
                 > int((datetime.datetime.now() - datetime.timedelta(days=min_age)).strftime('%Y%m%d')) \
                 :
-                return
+                continue
             
             files = session_folder.add_folder_to_db()
 
