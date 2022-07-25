@@ -34,10 +34,17 @@ import data_validation as dv
 #             print(e)
 #             print(f"{p}: failed")
 #             continue
-import timing 
+import timing
 
-dv.clear_dir(path="//W10DTSM18306/neuropixels_data", 
-              include_session_subfolders=True, 
-              generate_large_checksums=True,
-              upper_size_limit=1024 ** 2 * 50,
-              )
+for p in [
+    "//W10DTSM112719/neuropixels_data",
+    "//w10dtsm18306/neuropixels_data",
+    ]:
+    dv.clear_dir(
+        path=p,
+        include_session_subfolders=False,
+        generate_large_checksums=True,
+        regenerate_large_checksums=False,
+        upper_size_limit=1024**3 * 5,
+        min_age=40, # days
+    )
