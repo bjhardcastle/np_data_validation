@@ -37,11 +37,11 @@
 # db.DVFile.generate_checksum("//allen/programs/mindscope/production/incoming/recording_slot3_2.npx2)
 # """
 import abc
-from copyreg import dispatch_table
 import dataclasses
 import datetime
 import enum
 import functools
+import inspect
 import json
 import logging
 import logging.handlers
@@ -56,11 +56,10 @@ import tempfile
 import traceback
 import warnings
 import zlib
-import inspect
+from copyreg import dispatch_table
 from multiprocessing.sharedctypes import Value
 from sqlite3 import dbapi2
-from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
-
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Type, Union
 
 # import yaml
 
@@ -963,7 +962,7 @@ class CRC32JsonDataValidationDB(DataValidationDB):
 class DataValidationFolder:
 
     db: Type[DataValidationDB] = None
-    backup_paths: set[str] = set()
+    backup_paths: Set[str] = set()
     generate_large_checksums: bool = True
     regenerate_large_checksums: bool = False
     include_subfolders: bool = True
@@ -1415,12 +1414,12 @@ def clear_dir(
             session_folder.upper_size_limit = upper_size_limit
 
 
-            if not session_folder.session:
-                return
+            if not hasattr(session_folder,'session'):
+                continue
             elif int(session_folder.session.date) \
                 > int((datetime.datetime.now() - datetime.timedelta(days=min_age)).strftime('%Y%m%d')) \
                 :
-                return
+                continue
             
             files = session_folder.add_folder_to_db()
 
