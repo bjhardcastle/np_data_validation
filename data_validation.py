@@ -1271,7 +1271,7 @@ class DataValidationFolder:
                 #! choice here is to accept a possibly stale checksum or regenerate one
                 # TODO compare date of checksum in db to some age limit
                 if file.size > self.upper_size_limit \
-                    and not self.regenerate_large_checksums \
+                    or not self.regenerate_large_checksums \
                     : # accept the db checksum if the file size is over a size threshold
                     continue
                 else:
