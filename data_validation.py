@@ -1185,8 +1185,9 @@ class DataValidationFolder:
 
                                 # delete the file from the backup folder
                                 if i == 0:
-                                    # logging.info(f"deleted {file.name} from {self.path}:")
                                     logging.info(display_str(f"{file.Match.SELF.name} (DELETED)", file))
+                                
+                                if os.path.exists(file.path):
                                     pathlib.Path(file.path).unlink()
 
                                 logging.info(display_str(f"{file.Match(file==euh).name}", euh))
