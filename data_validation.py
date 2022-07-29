@@ -1164,7 +1164,7 @@ class DataValidationFolder:
                 #         elif not any(x in euh.path for x in self.backups()):
                 #             add_to_results(results, file, euh, "other copies found")
 
-                if verbose:
+                if verbose and '*.dat' in file.path or '*.npx2' in file.path:
                     # print summary of file comparisons
                     report(file, extant_unique_hits)
                 if delete:
@@ -1437,13 +1437,14 @@ def clear_dir(
                 backup_folder.generate_large_checksums = generate_large_checksums
                 backup_folder.upper_size_limit = upper_size_limit
 
-                backups = backup_folder.add_folder_to_db()
-                # as a backup, send to Shelvedb
-                if backups:
-                    for b in backups:
-                        db_s.add_file(b)
+                # generate checksums for backup folder if they don't already exist
+                # backups = backup_folder.add_folder_to_db()
+                # # as a backup, send to Shelvedb
+                # if backups:
+                #     for b in backups:
+                #         db_s.add_file(b)
 
-            in_lims = lims(session_folder)
+            in_lims = False # lims(session_folder)
             if in_lims:
                 backup_folder = DataValidationFolder(lims(session_folder))
                 if backup_folder.accessible:
@@ -1460,9 +1461,9 @@ def clear_dir(
 
             # check if there are any valid backups
             session_folder.add_backup(npexp(session_folder))
-            if in_lims:
-                session_folder.add_backup(lims(session_folder))
-            session_folder.validate_backups(verbose=False, delete=True)
+            # if in_lims:
+            #     session_folder.add_backup(lims(session_folder))
+            session_folder.validate_backups(verbose=True, delete=True)
 
             # except Exception as e:
             #     logging.warning(f"{f.as_posix()}: {error(e)}")

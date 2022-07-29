@@ -37,14 +37,14 @@ import data_validation as dv
 import timing
 
 for p in [
+    "B:/",  
     "A:/",
-    "B:/",
     ]:
     dv.clear_dir(
         path=p,
         include_session_subfolders=True,
         generate_large_checksums=True,
         regenerate_large_checksums=False,
-        upper_size_limit=1024**4 * 5,
+        upper_size_limit=1024**1 * 5,
         min_age=0, # days
     )
