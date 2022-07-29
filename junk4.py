@@ -47,4 +47,5 @@ for p in [
         regenerate_large_checksums=False,
         upper_size_limit=1024**1 * 5,
         min_age=0, # days
+        delete=True,
     )

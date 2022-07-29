@@ -1373,6 +1373,7 @@ def clear_dir(
     regenerate_large_checksums: bool = False,
     upper_size_limit=1024**3 * 5, # GB
     min_age=30, # days
+    delete=False,
 ):
     """For a directory containing session folders, check whether valid backups exist
     then delete"""
@@ -1463,7 +1464,7 @@ def clear_dir(
             session_folder.add_backup(npexp(session_folder))
             # if in_lims:
             #     session_folder.add_backup(lims(session_folder))
-            session_folder.validate_backups(verbose=True, delete=True)
+            session_folder.validate_backups(verbose=True, delete=delete)
 
             # except Exception as e:
             #     logging.warning(f"{f.as_posix()}: {error(e)}")
