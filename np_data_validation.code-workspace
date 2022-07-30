@@ -4,7 +4,14 @@
 			"path": "."
 		},
 		{
+			"name": "snapshots",
+			"path": "..\\snapshots"
+		},
+		{
 			"path": "\\\\allen\\ai\\homedirs\\ben.hardcastle"
+		},
+		{
+			"path": "\\\\allen\\programs\\mindscope\\workgroups\\np-exp\\ben"
 		}
 	],
 	"settings": {

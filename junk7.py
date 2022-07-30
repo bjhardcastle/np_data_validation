@@ -1,9 +1,11 @@
-import pathlib
-
 import data_validation as dv
+import pathlib
+import argparse
+# NPEXP_ROOT = R"//allen/programs/mindscope/workgroups/np-exp"
+# for f in pathlib.Path(NPEXP_ROOT).iterdir():
 
-dv.clear_npexp(min_age=30, # days
-    delete=False,)
+    # dv.clear_npexp(f,min_age=30, # days
+    #     delete=False,)
 
 # for p in [
 #     "B:/",  
@@ -19,3 +21,10 @@ dv.clear_npexp(min_age=30, # days
 #         delete=True,
 #     )
 
+if __name__ == "__main__":
+    # define args
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--session_folder_str', type=str)
+    args = parser.parse_args()
+    
+    dv.clear_npexp(args.session_folder_str)
