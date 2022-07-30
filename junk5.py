@@ -49,7 +49,7 @@ def chunk_crc32(fpath: Any = None, fsize=None) -> str:
         fpath = fpath.path
         fsize = fpath.size
 
-    chunk_size = 8*65536 # bytes
+    chunk_size = 8 * 65536 # bytes
 
     # don't show progress bar for small files
     display = True if os.stat(fpath).st_size > 10 * chunk_size else False
@@ -75,22 +75,22 @@ def chunk_crc32(fpath: Any = None, fsize=None) -> str:
 
 def mmap_crc32(fpath: Union[str, pathlib.Path], fsize=None) -> str:
     """ generate crc32 with for loop to read large files in chunks """
-    chunk_size = 1024*65536 # bytes
-                       # don't show progress bar for small files
-    display = True     #if os.stat(fpath).st_size > 10 * chunk_size else False
+    chunk_size = 1* 65536 # bytes
+                              # don't show progress bar for small files
+    display = True            #if os.stat(fpath).st_size > 10 * chunk_size else False
 
     print('using standalone ' + inspect.stack()[0][3])
 
     crc = 0
     if not fsize:
         fsize = os.stat(fpath).st_size                                 # bytes
-    with open(str(fpath), 'rb', chunk_size) as ins:
-        with mmap.mmap(ins.fileno(), 0, access=mmap.ACCESS_READ) as m:
-            for _ in progressbar(range(int((fsize / chunk_size)) + 1),
-                                 prefix="generating crc32 checksum ",
-                                 units="B",
-                                 unit_scaler=chunk_size,
-                                 display=display):
+    with open(str(fpath), 'rb',chunk_size) as ins:
+        for _ in progressbar(range(int((fsize / chunk_size)) + 1),
+                                prefix="generating crc32 checksum ",
+                                units="B",
+                                unit_scaler=chunk_size,
+                                display=display):
+            with mmap.mmap(ins.fileno(), 0, access=mmap.ACCESS_READ) as m:
                 crc = zlib.crc32(m.read(), crc)
     return '%08X' % (crc & 0xFFFFFFFF)
 
@@ -117,7 +117,7 @@ def mmap_direct(fpath: Union[str, pathlib.Path], fsize=None) -> str:
     return '%08X' % (crc & 0xFFFFFFFF)
 
 
-f = large
+f = med
 file = dv.CRC32DataValidationFile(path=f)
 # fsize = os.stat(f).st_size  # bytes
 
@@ -153,19 +153,22 @@ results = {}
 def add_results(name, time):
     results[name] = f"{time:.2f} s"
 
-
+i=0
 # t = timeit.timeit(standard, number=N)
 # add_results("2.1_standard:",t)
 # t = timeit.timeit(mm_direct, number=N)
 # add_results("2.1_mm_direct:", t)
-t = timeit.timeit(standard, number=N)
-add_results("2.0_standard:", t)
 # t = timeit.timeit(mm_direct, number=N)
 # add_results("2.3_mm_direct:", t)
-t = timeit.timeit(mm, number=N)
-add_results("2.0_mm:", t)
+t = timeit.timeit(mm_direct, number=N)
+i+=1
+add_results(f"{i}_mm:", t)
 t = timeit.timeit(standard, number=N)
-add_results("2.2_standard:", t)
+i+=1
+add_results(f"{i}_standard:", t)
+t = timeit.timeit(standard, number=N)
+i+=1
+add_results(f"{i}_standard:", t)
 
 import pprint
 
