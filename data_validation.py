@@ -346,6 +346,10 @@ class DataValidationFile(abc.ABC):
         else:
             self.path = pathlib.Path(path).as_posix()
 
+        # we have a mix in the databases of posix paths with and without the double fwd slash
+        if self.path[0] == '/' and self.path[1] != '/':
+            self.path = '/' + self.path
+            
         self.name = os.path.basename(self.path)
 
         if path and not size and self.accessible: # TODO replace exists check, race condition
@@ -740,8 +744,9 @@ class MongoDataValidationDB(DataValidationDB):
         # with cls.db as db:
         entries = list(cls.db.find({
             "session_id": file.session.id,
-        }))                                  # .distinct("_id")
-
+            "path": re.compile(file.name),
+        }))
+        # TODO get rid of duplicates here before creating DV file objects 
         matches = [
             cls.DVFile(
                 path=entry['path'],
@@ -1331,7 +1336,7 @@ def test_data_validation_file():
         checksum_validate = valid
 
     cls = Test
-    path = '/tmp/test.txt'
+    path = '//tmp/tmp/test.txt' # currently only working with network drives, which require a folder in the middle between drive/file
     checksum = '12345678'
     size = 10
 
@@ -1340,32 +1345,120 @@ def test_data_validation_file():
     other = cls(path=path, checksum=checksum, size=size)
     assert (self == self) == self.Match.SELF, "not recognized: self"
 
-    other = cls(path='/tmp2/test.txt', checksum=checksum, size=size)
+    other = cls(path='//tmp2/tmp/test.txt', checksum=checksum, size=size)
     assert (self == other) == self.Match.VALID_COPY_SAME_NAME, "not recgonized: valid copy, not self"
 
-    other = cls(path='/tmp2/test2.txt', checksum=checksum, size=size)
+    other = cls(path='//tmp2/tmp/test2.txt', checksum=checksum, size=size)
     assert (self == other) == self.Match.VALID_COPY_RENAMED, "not recognized: valid copy, different name"
 
-    other = cls(path='/tmp2/test.txt', checksum='87654321', size=20)
+    other = cls(path='//tmp2/tmp/test.txt', checksum='87654321', size=20)
     assert (self == other) == self.Match.UNSYNCED_DATA, "not recognized: out-of-sync copy"
 
-    other = cls(path='/tmp2/test.txt', checksum=checksum, size=20)
+    other = cls(path='//tmp2/tmp/test.txt', checksum=checksum, size=20)
     assert (self == other) == self.Match.UNSYNCED_CHECKSUM, "not recognized: out-of-sync copy with incorrect checksum"
     #* note checksum is equal, which could occur if it hasn't been updated in db
 
-    other = cls(path='/tmp2/test.txt', checksum='87654321', size=size)
+    other = cls(path='//tmp2/tmp/test.txt', checksum='87654321', size=size)
     assert (self == other) == self.Match.UNSYNCED_OR_CORRUPT_DATA, "not recognized: corrupt copy"
 
-    other = cls(path='/tmp/test2.txt', checksum=checksum, size=20)
+    other = cls(path='//tmp/tmp/test2.txt', checksum=checksum, size=20)
     assert (self == other) == self.Match.CHECKSUM_COLLISION, "not recognized: checksum collision"
 
-    other = cls(path='/tmp/test2.txt', checksum='87654321', size=20)
+    other = cls(path='//tmp/tmp/test2.txt', checksum='87654321', size=20)
     assert (self == other) == self.Match.UNRELATED, "not recognized: unrelated file"
 
 
 test_data_validation_file()
 
+def clear_npexp(min_age=30, # days
+    delete=False,):
+    """Look for large npx2 files - check their age, check they have a valid copy on LIMS, then delete"""
+    
+    NPEXP_ROOT = R"//allen/programs/mindscope/workgroups/np-exp"
+    
+    def npexp(session_folder: DataValidationFolder):
+        return NPEXP_ROOT + '/' + session_folder.session.folder
+    
+    # db_s = ShelveDataValidationDB()
+    db_m = MongoDataValidationDB()
+    
+    def lims(session_folder) -> str:
+        try:
+            import data_getters as dg
+            d = dg.lims_data_getter(session_folder.split('_')[0])
+            d.get_probe_data()
+            
+            WKF_QRY =   '''
+                        SELECT es.storage_directory
+                        FROM ecephys_sessions es
+                        WHERE es.id = {}
+                        '''
+            d.cursor.execute(WKF_QRY.format(d.lims_id))
+            exp_data = d.cursor.fetchall()
+            if exp_data and exp_data[0]['storage_directory']:
+                return str('/'+exp_data[0]['storage_directory'])
+            else:
+                return None
+        except:
+            return None
+    
+    for f in pathlib.Path(NPEXP_ROOT).iterdir():
+        try:
+            session_folder = Session(str(f)).folder
+        except ValueError:
+            # not an ecephys session folder
+            continue
+        lims(session_folder)
+        for probe_str in ['ABC','DEF']:
+            probe_folder = f / f'{session_folder}_probe{probe_str}'
+            
+            if probe_folder.exists():
+                g = probe_folder.glob('*.npx2')
+                
+                if g:
+                    files = [file for file in g]
+                    
+                    for filepath in files:
+                        npexp_npx2 = CRC32DataValidationFile(str(filepath))
+                        
+                        # shelve_matches = db_s.get_matches(npexp_npx2)
+                        matches, match_type = db_m.get_matches(npexp_npx2)
+                    
+                        for i, v in enumerate(match_type):
+                            if v in [npexp_npx2.Match.SELF.value, npexp_npx2.Match.SELF_NO_CHECKSUM.value]: 
+                                # without re-checksumming, exchange with the database entry 
+                                # (we recently checksummed all npx2s in npexp in one go, so this should be safe to do)
+                                npexp_npx2 = matches[i]
+                                break
+                        else: 
+                            # no existing entry in db:
+                            # TODO checksum new npexp entries
+                            continue    
+                        
+                        # now check for matching backups on lims 
+                        for i, v in enumerate(match_type):
+                            if v in  [npexp_npx2.Match.VALID_COPY_RENAMED, npexp_npx2.Match.VALID_COPY_SAME_NAME]: 
+                            
+                                # delete_if_file_on_lims(npexp_npx2)                             
+                                # # [npexp_npx2.Match.VALID_COPY_RENAMED, npexp_npx2.Match.VALID_COPY_SAME_NAME]:
+                                report(npexp_npx2, matches[i])
 
+                        else:
+                            # TODO get lims path for this npexp file
+                            limspath = lims(session_folder)
+                            # lims_npx2 = CRC32DataValidationFile(file = str(limspath))
+                            # lims_npx2.checksum = lims_npx2.generate_checksum(lims_npx2.path)  
+                            # db_m.add_file(lims_npx2)
+                            # if valid copy, delete
+                            # if delete:
+                            #     filepath.unlink()
+                            # else:
+                            #   report(npexp_npx2, matches[i])
+                            ...
+                            
+                        
+    
+    
 def clear_dir(
     path: str = None,
     include_session_subfolders: bool = False,
