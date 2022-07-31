@@ -97,22 +97,11 @@ def mmap_crc32(fpath: Union[str, pathlib.Path], fsize=None) -> str:
 
 def mmap_direct(fpath: Union[str, pathlib.Path], fsize=None) -> str:
     """ generate crc32 with for loop to read large files in chunks """
-    # chunk_size = 65536 # bytes
-    # don't show progress bar for small files
-    display = True #if os.stat(fpath).st_size > 10 * chunk_size else False
-                   # if not fsize:
-                   #     fsize = os.stat(fpath).st_size  # bytes
-
-    print('using standalone ' + inspect.stack()[0][3])
+    # print('using standalone ' + inspect.stack()[0][3])
 
     crc = 0
     with open(str(fpath), 'rb') as ins:
         with mmap.mmap(ins.fileno(), 0, access=mmap.ACCESS_READ) as m:
-            # for _ in progressbar(range(int((os.stat(fpath).st_size / chunk_size)) + 1),
-            #                      prefix="generating crc32 checksum ",
-            #                      units="B",
-            #                      unit_scaler=chunk_size,
-            #                      display=display):
             crc = zlib.crc32(m.read(), crc)
     return '%08X' % (crc & 0xFFFFFFFF)
 

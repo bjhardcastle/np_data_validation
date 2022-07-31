@@ -46,6 +46,7 @@ import inspect
 import json
 import logging
 import logging.handlers
+import mmap
 import os
 import pathlib
 import pdb
@@ -139,6 +140,15 @@ def chunk_crc32(file:Any=None, fsize=None) -> str:
 
     return '%08X' % (crc & 0xFFFFFFFF)
 
+def mmap_direct(fpath: Union[str, pathlib.Path], fsize=None) -> str:
+    """ generate crc32 with for loop to read large files in chunks """
+    # print('using standalone ' + inspect.stack()[0][3])
+    print(f'using mmap_direct for {fpath}')
+    crc = 0
+    with open(str(fpath), 'rb') as ins:
+        with mmap.mmap(ins.fileno(), 0, access=mmap.ACCESS_READ) as m:
+            crc = zlib.crc32(m.read(), crc)
+    return '%08X' % (crc & 0xFFFFFFFF)
 
 def test_crc32_function(func, *args, **kwargs):
     temp = os.path.join(tempfile.gettempdir(), 'checksum_test')
@@ -1384,8 +1394,14 @@ def clear_npexp(folder_str, generate=False, min_age=30, # days
     delete=False,):
     """Look for large npx2 files - check their age, check they have a valid copy on LIMS, then delete"""
     
-    db_s = ShelveDataValidationDB()
+    # db_s = ShelveDataValidationDB()
     db_m = MongoDataValidationDB()
+    hostname = os.getenv('hostname')
+    if 'hpc' in hostname or (hostname.startswith('n') and len(hostname) <= 4):
+        hpc = True
+        CRC32DataValidationFile.checksum_generator = mmap_direct
+    else:
+        hpc=False
     
     def lims(session_folder) -> str:
         try:
@@ -1461,7 +1477,7 @@ def clear_npexp(folder_str, generate=False, min_age=30, # days
                         # no existing entry in db:
                         npexp_npx2.checksum = npexp_npx2.generate_checksum(npexp_npx2.path) 
                         db_m.add_file(npexp_npx2)
-                        db_s.add_file(npexp_npx2)            
+                        # db_s.add_file(npexp_npx2)            
                     # now check for matching backups on lims 
                     for i, v in enumerate(match_type):
                         if v in [npexp_npx2.Match.VALID_COPY_RENAMED, npexp_npx2.Match.VALID_COPY_SAME_NAME] \
@@ -1491,7 +1507,7 @@ def clear_npexp(folder_str, generate=False, min_age=30, # days
                                     # we alredy know this isn't in the db, so just checksum
                                     lims_npx2.checksum = lims_npx2.generate_checksum(lims_npx2.path) 
                                     db_m.add_file(lims_npx2)
-                                    db_s.add_file(lims_npx2)
+                                    # db_s.add_file(lims_npx2)
                                     
                                     if (npexp_npx2 == lims_npx2) in [npexp_npx2.Match.VALID_COPY_RENAMED, npexp_npx2.Match.VALID_COPY_SAME_NAME]:
                                         # if 'prod0' not in matches[i].path:

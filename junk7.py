@@ -28,4 +28,4 @@ if __name__ == "__main__":
     parser.add_argument('--session_folder_str', type=str)
     args = parser.parse_args()
     
-    dv.clear_npexp(args.session_folder_str,generate=True,min_age=60, delete=False)# days)
+    dv.clear_npexp(args.session_folder_str,generate=True,min_age=0, delete=False)# days)
