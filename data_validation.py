@@ -53,6 +53,7 @@ import pdb
 import pprint
 import re
 import shelve
+import socket
 import sys
 import tempfile
 import traceback
@@ -1396,7 +1397,9 @@ def clear_npexp(folder_str, generate=False, min_age=30, # days
     
     # db_s = ShelveDataValidationDB()
     db_m = MongoDataValidationDB()
-    hostname = os.getenv('hostname')
+    hostname = socket.gethostname()
+    # os.getenv('hostname')
+    print(hostname)
     if 'hpc' in hostname or (hostname.startswith('n') and len(hostname) <= 4):
         hpc = True
         CRC32DataValidationFile.checksum_generator = mmap_direct
