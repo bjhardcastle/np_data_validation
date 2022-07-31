@@ -91,7 +91,7 @@ def progressbar(it,
                 display: bool = True):
     # from https://stackoverflow.com/a/34482761
     count = len(it)
-
+    display=False
     def show(j):
         if display:
             x = int(size * j / (count if count != 0 else 1))
@@ -117,7 +117,7 @@ def chunk_crc32(file:Any=None, fsize=None) -> str:
         file = file.path
         fsize = file.size
 
-    chunk_size = 8*65536 # bytes
+    chunk_size = 65536 # bytes
 
     # print('using builtin ' + inspect.stack()[0][3])
 
@@ -695,7 +695,7 @@ class ShelveDataValidationDB(DataValidationDB):
 
 class MongoDataValidationDB(DataValidationDB):
     """
-    A database that stores data in a shelve database
+    A database that stores validation data in mongodb 
     """
     DVFile: DataValidationFile = CRC32DataValidationFile
     db_address = "mongodb://10.128.50.77:27017/"
@@ -744,9 +744,19 @@ class MongoDataValidationDB(DataValidationDB):
         # with cls.db as db:
         entries = list(cls.db.find({
             "session_id": file.session.id,
-            "path": re.compile(file.name),
+            # "path": re.compile(file.name),
         }))
         # TODO get rid of duplicates here before creating DV file objects 
+        # matches = []
+        # for entry in entries:
+        #     matches.append(
+        #         cls.DVFile(
+        #         path=entry['path'],
+        #         checksum=entry['checksum'],
+        #         size=entry['size'],
+        #     )
+        #     )
+                           
         matches = [
             cls.DVFile(
                 path=entry['path'],
@@ -1370,7 +1380,7 @@ def test_data_validation_file():
 
 test_data_validation_file()
 
-def clear_npexp(folder_str, min_age=30, # days
+def clear_npexp(folder_str, generate=False, min_age=30, # days
     delete=False,):
     """Look for large npx2 files - check their age, check they have a valid copy on LIMS, then delete"""
     
@@ -1383,7 +1393,20 @@ def clear_npexp(folder_str, min_age=30, # days
             d = dg.lims_data_getter(session_folder.split('_')[0])
             d.get_probe_data()
             # print(pathlib.Path('/' + d.data_dict['storage_directory']))
-            return d.data_dict['storage_directory'] 
+            probe_dir = d.data_dict['storage_directory'] 
+            if probe_dir:
+                return '/'+probe_dir 
+            WKF_QRY =   '''
+                        SELECT es.storage_directory
+                        FROM ecephys_sessions es
+                        WHERE es.id = {}
+                        '''
+            d.cursor.execute(WKF_QRY.format(d.lims_id))
+            exp_data = d.cursor.fetchall()
+            if exp_data and exp_data[0]['storage_directory']:
+                return str('/'+exp_data[0]['storage_directory'])
+            else:
+                return None
         except:
             return None
         
@@ -1432,6 +1455,9 @@ def clear_npexp(folder_str, min_age=30, # days
                             npexp_npx2 = matches[i]
                             break
                     else: 
+                        if not generate:
+                            print(f'checksum needed: {npexp_npx2.path}')
+                            continue
                         # no existing entry in db:
                         npexp_npx2.checksum = npexp_npx2.generate_checksum(npexp_npx2.path) 
                         db_m.add_file(npexp_npx2)
@@ -1448,23 +1474,28 @@ def clear_npexp(folder_str, min_age=30, # days
                     else:
                         # TODO get lims path for this npexp file
                         limspath = lims(session_folder)
+                        if not limspath:
+                            continue
                         lims_probe_folder = pathlib.Path(limspath) / f'{session_folder}_probe{probe_str}'
                         if lims_probe_folder.exists():
-                            g = probe_folder.glob('*.npx2')
+                            g = lims_probe_folder.glob('*.npx2')
             
                             if g:
                                 files = [file for file in g]
                 
                                 for filepath in files:
                                     lims_npx2 = CRC32DataValidationFile(str(filepath))
-                                    
+                                    if not generate:
+                                        print(f'checksum needed: {lims_npx2.path}')
+                                        continue
                                     # we alredy know this isn't in the db, so just checksum
                                     lims_npx2.checksum = lims_npx2.generate_checksum(lims_npx2.path) 
                                     db_m.add_file(lims_npx2)
                                     db_s.add_file(lims_npx2)
                                     
-                                    if (npexp_npx2 == lims_npx2) in [npexp_npx2.Match.VALID_COPY_RENAMED, npexp_npx2.Match.VALID_COPY_SAME_NAME] \
-                                        and 'prod0' in matches[i].path:
+                                    if (npexp_npx2 == lims_npx2) in [npexp_npx2.Match.VALID_COPY_RENAMED, npexp_npx2.Match.VALID_COPY_SAME_NAME]:
+                                        # if 'prod0' not in matches[i].path:
+                                        print(f'lims {matches[i].path=}')
                                         if delete:
                                             npexp_npx2.unlink()
                                         else:

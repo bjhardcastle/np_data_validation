@@ -22,6 +22,7 @@ import argparse
 #     )
 
 if __name__ == "__main__":
+    print('y')
     # define args
     parser = argparse.ArgumentParser()
     parser.add_argument('--session_folder_str', type=str)
