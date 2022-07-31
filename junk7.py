@@ -1,3 +1,5 @@
+from operator import ge
+import time
 import data_validation as dv
 import pathlib
 import argparse
@@ -20,12 +22,10 @@ import argparse
 #         min_age=0, # days
 #         delete=True,
 #     )
-
 if __name__ == "__main__":
-    print('y')
     # define args
     parser = argparse.ArgumentParser()
     parser.add_argument('--session_folder_str', type=str)
     args = parser.parse_args()
     
-    dv.clear_npexp(args.session_folder_str)
+    dv.clear_npexp(args.session_folder_str,generate=True,min_age=60, delete=False)# days)

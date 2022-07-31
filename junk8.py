@@ -9,6 +9,6 @@ for f in pathlib.Path(NPEXP_ROOT).iterdir():
     dv.clear_npexp(
         f,  
         generate=True,
-        min_age=30, # days
+        min_age=0, # days
         delete=False,
         )
