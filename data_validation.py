@@ -1391,7 +1391,7 @@ def test_data_validation_file():
 
 test_data_validation_file()
 
-def clear_npexp(folder_str, generate=False, min_age=30, # days
+def clear_npexp(folder_str, generate=True, min_age=30, # days
     delete=False,):
     """Look for large npx2 files - check their age, check they have a valid copy on LIMS, then delete"""
     
@@ -1402,7 +1402,7 @@ def clear_npexp(folder_str, generate=False, min_age=30, # days
     print(hostname)
     if 'hpc' in hostname or (hostname.startswith('n') and len(hostname) <= 4):
         hpc = True
-        CRC32DataValidationFile.checksum_generator = mmap_direct
+        #CRC32DataValidationFile.checksum_generator = mmap_direct
     else:
         hpc=False
     
