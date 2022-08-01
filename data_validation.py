@@ -1394,7 +1394,11 @@ test_data_validation_file()
 def clear_npexp(folder_str, generate=True, min_age=30, # days
     delete=False,):
     """Look for large npx2 files - check their age, check they have a valid copy on LIMS, then delete"""
-    
+    NPEXP_ROOT = R"//allen/programs/mindscope/workgroups/np-exp/"
+
+    if len(pathlib.Path(folder_str).parts) == 1:
+        folder_str = pathlib.Path(NPEXP_ROOT, folder_str)
+        
     # db_s = ShelveDataValidationDB()
     db_m = MongoDataValidationDB()
     hostname = socket.gethostname()
@@ -1484,7 +1488,9 @@ def clear_npexp(folder_str, generate=True, min_age=30, # days
                     # now check for matching backups on lims 
                     for i, v in enumerate(match_type):
                         if v in [npexp_npx2.Match.VALID_COPY_RENAMED, npexp_npx2.Match.VALID_COPY_SAME_NAME] \
-                            and 'prod0' in matches[i].path:
+                            :
+                            # and 'prod0' in matches[i].path
+                            print("DELETE {}".format(matches[i].path))
                             if delete:
                                 npexp_npx2.unlink()
                             else:
