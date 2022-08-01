@@ -93,7 +93,7 @@ def progressbar(it,
                 display: bool = True):
     # from https://stackoverflow.com/a/34482761
     count = len(it)
-    display=False
+    # display=False
     def show(j):
         if display:
             x = int(size * j / (count if count != 0 else 1))
