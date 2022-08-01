@@ -34,7 +34,7 @@ def main():
         dv.clear_npexp(args.session_folder_str,generate=False,min_age=0, delete=False)# days)
     else:
         for f in pathlib.Path(NPEXP_ROOT).glob('*'):
-            dv.clear_npexp(f,generate=False,min_age=0, delete=False)# days)
+            dv.clear_npexp(f,generate=True,min_age=0, delete=False)# days)
     
 if __name__ == "__main__":
     main()

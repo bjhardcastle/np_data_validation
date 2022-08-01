@@ -1520,7 +1520,7 @@ def clear_npexp(folder_str, generate=True, min_age=30, # days
                                     
                                     if (npexp_npx2 == lims_npx2) in [npexp_npx2.Match.VALID_COPY_RENAMED, npexp_npx2.Match.VALID_COPY_SAME_NAME]:
                                         # if 'prod0' not in matches[i].path:
-                                        print(f'lims {matches[i].path=}')
+                                        print(f'lims {lims_npx2.path=}')
                                         if delete:
                                             npexp_npx2.unlink()
                                         else:
