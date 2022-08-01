@@ -56,6 +56,7 @@ import shelve
 import socket
 import sys
 import tempfile
+import time
 import traceback
 import warnings
 import zlib
@@ -93,7 +94,7 @@ def progressbar(it,
                 display: bool = True):
     # from https://stackoverflow.com/a/34482761
     count = len(it)
-    # display=False
+    display=False
     def show(j):
         if display:
             x = int(size * j / (count if count != 0 else 1))
@@ -1482,7 +1483,10 @@ def clear_npexp(folder_str, generate=True, min_age=30, # days
                             print(f'checksum needed: {npexp_npx2.path}')
                             continue
                         # no existing entry in db:
+                        print(f'generating checksum: {npexp_npx2.path}')
+                        start_time = time.time()
                         npexp_npx2.checksum = npexp_npx2.generate_checksum(npexp_npx2.path) 
+                        print(f'..completed in {time.time() - start_time : .0f} s')
                         db_m.add_file(npexp_npx2)
                         # db_s.add_file(npexp_npx2)            
                     # now check for matching backups on lims 
@@ -1514,7 +1518,9 @@ def clear_npexp(folder_str, generate=True, min_age=30, # days
                                         print(f'checksum needed: {lims_npx2.path}')
                                         continue
                                     # we alredy know this isn't in the db, so just checksum
+                                    start_time = time.time()
                                     lims_npx2.checksum = lims_npx2.generate_checksum(lims_npx2.path) 
+                                    print(f'..completed in {time.time() - start_time : .0f} s')
                                     db_m.add_file(lims_npx2)
                                     # db_s.add_file(lims_npx2)
                                     
