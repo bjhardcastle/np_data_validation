@@ -31,7 +31,7 @@ def main():
     args = parser.parse_args()
     
     if args.session_folder_str:
-        dv.clear_npexp(args.session_folder_str,generate=True,min_age=45, delete=False)# days)
+        dv.clear_npexp(args.session_folder_str,generate=True,min_age=0, delete=False)# days)
     else:
         total_deleted_bytes = 0
         for f in pathlib.Path(NPEXP_ROOT).glob('*'):
