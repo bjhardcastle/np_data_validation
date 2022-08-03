@@ -37,6 +37,7 @@
 # db.DVFile.generate_checksum("//allen/programs/mindscope/production/incoming/recording_slot3_2.npx2)
 # """
 import abc
+import argparse
 import dataclasses
 import datetime
 import enum
