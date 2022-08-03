@@ -22,7 +22,7 @@ import argparse
 #         min_age=0, # days
 #         delete=True,
 #     )\
-NPEXP_ROOT = R"//allen/programs/mindscope/workgroups/np-exp/"
+NPEXP_ROOT = R"//10.128.50.43/sd6.3"
 
 def main():
     # define args
@@ -35,7 +35,7 @@ def main():
     else:
         total_deleted_bytes = 0
         for f in pathlib.Path(NPEXP_ROOT).glob('*'):
-            total_deleted_bytes += dv.clear_npexp(f,generate=False,min_age=0, delete=False) or 0
+            total_deleted_bytes += dv.clear_npexp(f,generate=True,min_age=0, delete=False) or 0
             print(f'{total_deleted_bytes/2**40 : .1f} Tb deleted')      
 
 if __name__ == "__main__":
