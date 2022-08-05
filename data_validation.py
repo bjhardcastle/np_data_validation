@@ -98,28 +98,18 @@ R"""Tools for validating neuropixels data files from ecephys recording sessions.
 """
 
 import abc
-import argparse
-import dataclasses
-import datetime
 import enum
-import functools
-import inspect
 import json
 import logging
 import logging.handlers
 import mmap
 import os
 import pathlib
-import pdb
-import pprint
 import re
 import shelve
-import socket
 import sys
 import tempfile
-import time
 import traceback
-import warnings
 import zlib
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Type, Union
 
@@ -244,7 +234,7 @@ class Session:
     mouse = None
     date = None
     
-    NPEXP_ROOT = R"//allen/programs/mindscope/workgroups/np-exp"
+    NPEXP_ROOT = pathlib.Path(R"//allen/programs/mindscope/workgroups/np-exp")
 
     def __init__(self, path: str):
         if not isinstance(path, str):
@@ -252,6 +242,8 @@ class Session:
 
         self.folder = self.__class__.folder(path)
         # TODO maybe not do this - could be set to class without realizing - just assign for instances
+        self.lims_path = self.__class__.lims_path(path)
+        self.npexp_path = self.__class__.npexp_path(path)
 
         if self.folder:
             # extract the constituent parts of the session folder
@@ -279,15 +271,15 @@ class Session:
             return None
         
     @classmethod
-    def npexp_folder(cls, path) -> Union[str, None]:
+    def npexp_path(cls, path) -> Union[str, None]:
         '''get session folder from path/str and combine with npexp root to get folder path on npexp'''        
         folder = cls.folder(path)
         if not folder:
             return None
-        return os.path.join(cls.NPEXP_ROOT, folder)
+        return cls.NPEXP_ROOT / folder
 
     @classmethod
-    def lims_folder(cls, path) -> Union[str, None]:
+    def lims_path(cls, path) -> Union[str, None]:
         '''get lims id from path/str and lookup the corresponding directory in lims'''
         folder = cls.folder(path)
         if not folder:
@@ -309,6 +301,7 @@ class Session:
             
         except:
             return None
+
 
 class SessionFile:
     """ Represents a single file belonging to a neuropixels ecephys session """
@@ -349,12 +342,10 @@ class SessionFile:
         self.session = Session(self.path)
         if not self.session:
             raise ValueError(f"{self.__class__}: path does not contain a session ID {path}")
-
-
     
     @property
     def root_path(self) -> str:
-        """ get the root path of the file """
+        """root path of the file (may be the same as session_folder_path)"""
         # we expect the session_folder string to first appear in the path as
         # a child of some 'repository' of session folders (like npexp), 
         # - split the path at the first session_folder match and call that folder the root
@@ -371,7 +362,7 @@ class SessionFile:
 
     @property
     def session_folder_path(self) -> Union[str, None]:
-        """ get the path to the session folder, if it exists"""
+        """path to the session folder, if it exists"""
         
         # if a repository (eg npexp) contains session folders, the following location should exist:
         session_folder_path = os.path.join(self.root_path, self.session.folder)
@@ -388,7 +379,7 @@ class SessionFile:
     
     @property
     def session_relative_path(self) -> Union[str, None]:
-        '''get the filepath relative to the session folder-repository''' 
+        '''filepath relative to a session folder's parent'''
         # wherever the file is, get its path relative to the parent of a
         # hypothetical session folder ie. session_id/.../filename.ext :
         session_relative_path = pathlib.Path(self.path).relative_to(self.root_path)
@@ -400,15 +391,15 @@ class SessionFile:
     
     @property
     def npexp_path(self) -> Union[str, None]:
-        '''get npexp path from session path'''
+        '''filepath on npexp (might not exist)'''
         if self.session:
-            return os.path.join(self.session.NPEXP_ROOT, self.relative_path)
+            return self.session.NPEXP_ROOT / self.session_relative_path
         else:
             return None
     
     def __lt__(self, other):
         if self.session.id == other.session.id:
-            return self.relative_path < other.relative_path
+            return self.session_relative_path < other.session_relative_path
         return self.session.id < other.session.id
 
 
@@ -1488,3 +1479,4 @@ def report(file: DataValidationFile, comparisons: List[DataValidationFile]):
 
     logging.info("\n")
     logging.info("#" * column_width)
+
