@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
-""" Tools for validating neuropixels data files from ecephys recording sessions.
+R"""Tools for validating neuropixels data files from ecephys recording sessions.
 
     Some design notes:
-    
     - hash + filesize uniquely identify data, regardless of path 
     
     - the database holds previously-generated checksum hashes for
@@ -57,18 +56,18 @@
     - convenience / helper functions: live in a separate module ?
 
     
-    some example usage:
+    Typical usage:
 
     x = DataValidationFileCRC32(
         path=
-        R"\\allen\programs\mindscope\workgroups\np-exp\1190290940_611166_20220708\1190258206_611166_20220708_surface-image1-left.png"
+        R'\\allen\programs\mindscope\workgroups\np-exp\1190290940_611166_20220708\1190258206_611166_20220708_surface-image1-left.png'
     )
-    print(f"checksum is auto-generated for small files: {x.checksum})
+    print(f'checksum is auto-generated for small files: {x.checksum}')
 
     y = DataValidationFileCRC32(
         checksum=x.checksum, 
         size=x.size, 
-        path="/dir/1190290940_611166_20220708_foo.png"
+        path='/dir/1190290940_611166_20220708_foo.png'
     )
 
     # DataValidationFile objects evaulate to True if they have some overlap between filename (regardless of path),
@@ -83,11 +82,11 @@
     db.add_file(x)
     
     # to see large-file checksum performance (~400GB file)
-    db.DVFile.generate_checksum("//allen/programs/mindscope/production/incoming/recording_slot3_2.npx2)
+    db.DVFile.generate_checksum('//allen/programs/mindscope/production/incoming/recording_slot3_2.npx2)
 
     # applying to folders
-    local = R"C:\Users\ben.hardcastle\Desktop\1190258206_611166_20220708"
-    npexp = R"\\w10dtsm18306\neuropixels_data\1190258206_611166_20220708"
+    local = R'C:\Users\ben.hardcastle\Desktop\1190258206_611166_20220708'
+    npexp = R'\\w10dtsm18306\neuropixels_data\1190258206_611166_20220708'
     f = dv.DataValidationFolder(local)
     f.db = dv.MongoDataValidationDB
     f.add_folder_to_db(local)
@@ -96,9 +95,7 @@
     f.add_backup(npexp)
 
     f.validate_backups(verbose=True)
-
-    """
-
+"""
 
 import abc
 import argparse
@@ -124,18 +121,14 @@ import time
 import traceback
 import warnings
 import zlib
-from copyreg import dispatch_table
-from multiprocessing.sharedctypes import Value
-from sqlite3 import dbapi2
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Type, Union
-
-# import yaml
 
 try:
     import pymongo
 except ImportError:
     print("pymongo not installed")
-import sys
+    
+import data_getters as dg  # from corbett's QC repo
 
 # LOG_DIR = fR"//allen/programs/mindscope/workgroups/np-exp/ben/data_validation/logs/"
 logging.basicConfig(format="%(asctime)s %(levelname)s %(message)s", filename="data_validation.log", level=logging.DEBUG,datefmt="%Y-%m-%d %H:%M")
@@ -250,6 +243,8 @@ class Session:
     id = None
     mouse = None
     date = None
+    
+    NPEXP_ROOT = R"//allen/programs/mindscope/workgroups/np-exp"
 
     def __init__(self, path: str):
         if not isinstance(path, str):
@@ -278,11 +273,42 @@ class Session:
         session_folders = re.findall(session_reg_exp, path)
         if session_folders:
             if not all(s == session_folders[0] for s in session_folders):
-                logging.warning(f"{cls.__class__}Mismatch between session folder strings - file may be in the wrong flder: {path}")
+                logging.warning(f"{cls.__class__} Mismatch between session folder strings - file may be in the wrong flder: {path}")
             return session_folders[0]
         else:
             return None
+        
+    @classmethod
+    def npexp_folder(cls, path) -> Union[str, None]:
+        '''get session folder from path/str and combine with npexp root to get folder path on npexp'''        
+        folder = cls.folder(path)
+        if not folder:
+            return None
+        return os.path.join(cls.NPEXP_ROOT, folder)
 
+    @classmethod
+    def lims_folder(cls, path) -> Union[str, None]:
+        '''get lims id from path/str and lookup the corresponding directory in lims'''
+        folder = cls.folder(path)
+        if not folder:
+            return None
+        
+        try:
+            lims_dg = dg.lims_data_getter(cls(path).id)
+            WKF_QRY =   '''
+                        SELECT es.storage_directory
+                        FROM ecephys_sessions es
+                        WHERE es.id = {}
+                        '''
+            lims_dg.cursor.execute(WKF_QRY.format(lims_dg.lims_id))
+            exp_data = lims_dg.cursor.fetchall()
+            if exp_data and exp_data[0]['storage_directory']:
+                return str('/'+exp_data[0]['storage_directory'])
+            else:
+                return None
+            
+        except:
+            return None
 
 class SessionFile:
     """ Represents a single file belonging to a neuropixels ecephys session """
@@ -316,50 +342,70 @@ class SessionFile:
 
         self.name = os.path.basename(self.path)
 
-        # get the name of the folder the file lives in (which may be the same as root_path below)
+        # get the name of the folder the file lives in (which may be the same as self.root_path below)
         self.parent = pathlib.Path(os.path.dirname(self.path)).parts[-1]
 
         # extract the session ID from anywhere in the path
         self.session = Session(self.path)
-        if self.session:
-
-            # we expect the session_folder string to first appear in the path as
-            # a child of some 'repository' of session folders, or there rare
-            # loose individual files - split the path at the first
-            # session_folder match and call that folder the root
-            parts = pathlib.Path(self.path).parts
-            while parts:
-                if self.session.folder in parts[0]:
-                    break
-                parts = parts[1:]
-            else:
-                raise ValueError(f"{self.__class__}: session_folder not found in path {self.path}")
-            self.root_path = self.path.split(str(parts[0]))[0]
-
-            # if the repository contains session folders, it should contain the
-            # following:
-            session_folder_path = os.path.join(self.root_path, self.session.folder)
-
-            # but this may not exist: we could have a file sitting in a folder
-            # with assorted files from multiple sessions (e.g. LIMS incoming),
-            # or a folder which has the session_folder pattern with extra info
-            # appended, eg. _probeABC:
-            if os.path.exists(session_folder_path):
-                self.session_folder_path = session_folder_path
-            else:
-                self.session_folder_path = None
-
-            # wherever the file is, get its path relative to the parent of a
-            # hypothetical session folder ie. session_id/.../filename.ext :
-            session_relative_path = pathlib.Path(self.path).relative_to(self.root_path)
-            if session_relative_path.parts[0] != self.session.folder:
-                self.relative_path = os.path.join(self.session.folder, str(session_relative_path))
-            else:
-                self.relative_path = str(session_relative_path)
-
-        else:
+        if not self.session:
             raise ValueError(f"{self.__class__}: path does not contain a session ID {path}")
 
+
+    
+    @property
+    def root_path(self) -> str:
+        """ get the root path of the file """
+        # we expect the session_folder string to first appear in the path as
+        # a child of some 'repository' of session folders (like npexp), 
+        # - split the path at the first session_folder match and call that folder the root
+        parts = pathlib.Path(self.path).parts
+        while parts:
+            if self.session.folder in parts[0]:
+                break
+            parts = parts[1:]
+        else:
+            raise ValueError(f"{self.__class__}: session_folder not found in path {self.path}")
+        
+        return self.path.split(str(parts[0]))[0]
+
+
+    @property
+    def session_folder_path(self) -> Union[str, None]:
+        """ get the path to the session folder, if it exists"""
+        
+        # if a repository (eg npexp) contains session folders, the following location should exist:
+        session_folder_path = os.path.join(self.root_path, self.session.folder)
+        if os.path.exists(session_folder_path):
+            return session_folder_path
+
+        # but it might not exist: we could have a file sitting in a folder with a flat structure:
+        # assorted files from multiple sessions in a single folder (e.g. LIMS incoming),
+        # or a folder which has the session_folder pattern plus extra info
+        # appended, eg. _probeABC
+        else:
+            self.session_folder_path = None
+    
+    
+    @property
+    def session_relative_path(self) -> Union[str, None]:
+        '''get the filepath relative to the session folder-repository''' 
+        # wherever the file is, get its path relative to the parent of a
+        # hypothetical session folder ie. session_id/.../filename.ext :
+        session_relative_path = pathlib.Path(self.path).relative_to(self.root_path)
+        if session_relative_path.parts[0] != self.session.folder:
+            return os.path.join(self.session.folder, str(session_relative_path))
+        else:
+            return str(session_relative_path)
+    
+    
+    @property
+    def npexp_path(self) -> Union[str, None]:
+        '''get npexp path from session path'''
+        if self.session:
+            return os.path.join(self.session.NPEXP_ROOT, self.relative_path)
+        else:
+            return None
+    
     def __lt__(self, other):
         if self.session.id == other.session.id:
             return self.relative_path < other.relative_path
@@ -628,48 +674,6 @@ class DataValidationDB(abc.ABC):
     expected results, a new database subclass can slot in to replace an old one
     in some other code without needing to make any other changes to that code
     
-    Some design notes:
-    
-    - hash + filesize uniquely identify data, regardless of path 
-    
-    - the database holds previously-generated checksum hashes for
-    large files (because they can take a long time to generate), plus their
-    filesize at the time of checksum generation
-    
-    - small text-like files can have checksums generated on the fly
-    so don't need to live in the database (but they could)
-    
-    for a given data file input we want to identify in the database:
-        - self:
-            - size[0] == size[1]
-            - hash[0] == hash[1]
-            - path[0] == path[1]
-    
-        - valid backups:
-            - size[0] == size[1]
-            - hash[0] == hash[1]
-            - path[0] != path[1]
-                
-            - valid backups, with filename mismatch:
-                - filename[0] != filename[1]                
-            
-        - invalid backups:
-            - path[0] != path[1] 
-            - filename[0] == filename[1]
-            
-            - invalid backups, corruption likely:
-                - size[0] == size[1]
-                - hash[0] != hash[1]
-            
-            - invalid backups, out-of-sync or incomplete transfer:       
-                - size[0] != size[1]
-                - hash[0] != hash[1]
-                
-        - other, assumed unrelated:
-            - size[0] != size[1]
-            - hash[0] != hash[1]
-            - filename[0] != filename[1]
-                
     """
     #* methods:
     #* add_file(file: DataValidationFile)
