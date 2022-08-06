@@ -623,6 +623,8 @@ class DataValidationFile(abc.ABC):
             return self.__class__.Match.UNKNOWN.value
 
     def __hash__(self):
+        # this might be a bad idea: added to allow for set() operations on DVFiles to remove duplicates when getting
+        # a database - but DVFiles are mutable
         return hash(self.checksum) ^ hash(self.size) ^ hash(self.path)
 
 class CRC32DataValidationFile(DataValidationFile, SessionFile):
