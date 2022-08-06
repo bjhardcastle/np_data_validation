@@ -120,8 +120,8 @@ try:
 except ImportError:
     print("pymongo not installed")
     
-import strategies # for interacting with database
 import data_getters as dg  # from corbett's QC repo
+import strategies  # for interacting with database
 
 # LOG_DIR = fR"//allen/programs/mindscope/workgroups/np-exp/ben/data_validation/logs/"
 logging.basicConfig(format="%(asctime)s %(levelname)s %(message)s", filename="data_validation.log", level=logging.DEBUG,datefmt="%Y-%m-%d %H:%M")
@@ -1161,6 +1161,8 @@ class DataValidationFolder:
 
 
     def find_valid_backups(self, file: DataValidationFile) -> List[DataValidationFile]:
+        #TODO ?move to strategies? the reason not to is that lims path takes time to fetch, prefer getting once for
+    #   and assembling with relative file paths, instead of repeat calls when fetching per file
         if not self.backup_paths():
             logging.warning(
                 f"{self.__class__}: no backup locations specified - use 'folder.add_backup(path)' to add one or more backup locations"
