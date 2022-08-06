@@ -387,10 +387,14 @@ class SessionFile:
         # hypothetical session folder ie. session_id/.../filename.ext :
         session_relative_path = pathlib.Path(self.path).relative_to(self.root_path)
         if session_relative_path.parts[0] != self.session.folder:
-            return os.path.join(self.session.folder, str(session_relative_path))
+            return pathlib.Path(self.session.folder, str(session_relative_path))
         else:
-            return str(session_relative_path)
+            return session_relative_path
     
+    @property
+    def relative_path(self) -> Union[str, None]:
+        '''filepath relative to a session folder'''
+        return pathlib.Path(self.session_relative_path.parts[1:])
     
     @property
     def npexp_path(self) -> Union[str, None]:
@@ -1142,17 +1146,42 @@ class DataValidationFolder:
                 strategies.generate_checksum_if_not_in_db(file, self.db)
         
         
-    #TODO: 'clear' : 
-    # * exchange_if_checksum_in_db
-    # * generate_checksum_if_not_in_db
+    def clear(self):
+        """Clear the folder of files which are backed-up on LIMS or np-exp""" 
+        for path in self.file_paths:
+            try:
+                file = self.db.DVFile(path=path.as_posix())
+            except (ValueError, TypeError):
+                logging.info(f"{self.__class__}: could not add to database, likely missing session ID: {path.as_posix()}")
+                continue
+            
+            file = strategies.exchange_if_checksum_in_db(file, self.db)
+            if not file.checksum:
+                file = strategies.generate_checksum(file, self.db)
+            
+            backups = strategies.find_backup_in_db(file, self.db, self.backup_paths)
     # * find_backup_if_not_in_db
     # * delete_if_valid_backup_in_db
-
+    
     def backups(self) -> List[str]:
         """Return a list of Folder objects containing backups for the session"""
         return list(self.backup_paths)
 
 
+    def find_valid_backups(self, file: DataValidationFile) -> List[DataValidationFile]:
+        if not self.backup_paths():
+            logging.warning(
+                f"{self.__class__}: no backup locations specified - use 'folder.add_backup(path)' to add one or more backup locations"
+            )
+            return 
+        
+        matches, match_type = self.db.get_matches(file)
+        matches = [m for i,m in enumerate(matches) if match_type[i] >= file.Match.VALID_COPY_RENAMED]    
+        
+        for backup_path in self.backup_paths:
+            backup = self.db.DVFile(pathlib.Path(backup_path, file.relative_path()).as_posix())
+
+    
     def validate_backups(self,
                          verbose: bool = True,
                          log_dir: str = "//allen/programs/mindscope/workgroups/np-exp/ben/data_validation/logs",
