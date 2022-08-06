@@ -1115,13 +1115,13 @@ class DataValidationFolder:
                 self.backup_paths.add(str(p))
 
     #TODO: 'add' : 
-    # * generate_checksum_if_not_in_database
+    # * generate_checksum_if_not_in_db
     
     #TODO: 'clear' : 
-    # * exchange_if_checksum_in_database
-    # * generate_checksum_if_not_in_database
-    # * exchange_if_checksum_in_database
-    # * exchange_if_checksum_in_database
+    # * exchange_if_checksum_in_db
+    # * generate_checksum_if_not_in_db
+    # * find_backup_if_not_in_db
+    # * delete_if_valid_backup_in_db
 
     def backups(self) -> List[str]:
         """Return a list of Folder objects containing backups for the session"""
