@@ -33,7 +33,7 @@ def generate_checksum_if_not_in_db(subject: dv.DataValidationFile, db: dv.DataVa
         generate_checksum(subject, db)
 
     
-def find_invalid_copies(subject: dv.DataValidationFile, db: dv.DataValidationDB) -> List[dv.DataValidationFile]:
+def find_invalid_copies_in_db(subject: dv.DataValidationFile, db: dv.DataValidationDB) -> List[dv.DataValidationFile]:
     """
     Check for invalid copies of the subject file in database.
     """
@@ -45,7 +45,7 @@ def find_invalid_copies(subject: dv.DataValidationFile, db: dv.DataValidationDB)
         ] or None
 
 
-def find_valid_copies(subject: dv.DataValidationFile, db: dv.DataValidationDB) -> List[dv.DataValidationFile]:
+def find_valid_copies_in_db(subject: dv.DataValidationFile, db: dv.DataValidationDB) -> List[dv.DataValidationFile]:
     """
     Check for valid copies of the subject file in database.
     """

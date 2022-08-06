@@ -1155,17 +1155,9 @@ class DataValidationFolder:
                 logging.info(f"{self.__class__}: could not add to database, likely missing session ID: {path.as_posix()}")
                 continue
             
-            file = strategies.exchange_if_checksum_in_db(file, self.db)
-            if not file.checksum:
-                file = strategies.generate_checksum(file, self.db)
-            
-            backups = strategies.find_backup_in_db(file, self.db, self.backup_paths)
+     # backups = strategies.find_backup_in_db(file, self.db, self.backup_paths)
     # * find_backup_if_not_in_db
     # * delete_if_valid_backup_in_db
-    
-    def backups(self) -> List[str]:
-        """Return a list of Folder objects containing backups for the session"""
-        return list(self.backup_paths)
 
 
     def find_valid_backups(self, file: DataValidationFile) -> List[DataValidationFile]:
@@ -1175,12 +1167,32 @@ class DataValidationFolder:
             )
             return 
         
-        matches, match_type = self.db.get_matches(file)
-        matches = [m for i,m in enumerate(matches) if match_type[i] >= file.Match.VALID_COPY_RENAMED]    
+        if not file.checksum:
+            file = strategies.exchange_if_checksum_in_db(file, self.db)
+        if not file.checksum:
+                file = strategies.generate_checksum(file, self.db)
+            
+        if strategies.find_invalid_copies_in_db(file, self.db):
+            logging.warning(f"{self.__class__}: found invalid copies for {file.path}")
+            return None
         
-        for backup_path in self.backup_paths:
-            backup = self.db.DVFile(pathlib.Path(backup_path, file.relative_path()).as_posix())
-
+        matches = strategies.find_valid_copies_in_db(file, self.db)
+        if matches:
+            #* check files are currently on lims and npexp 
+            backups = [
+                match for match in matches
+                if (self.lims_path in match.path and match.accessible)
+                or (self.npexp_path in match.path and match.accessible)
+                ] or None
+            
+        if not matches or not backups:
+            backups = []
+            for backup_path in self.backup_paths:
+                backup = self.db.DVFile(pathlib.Path(backup_path, file.relative_path()).as_posix())
+                if backup.accessible:
+                    backups.append(strategies.generate_checksum(backup))
+        
+        return backups or None
     
     def validate_backups(self,
                          verbose: bool = True,
@@ -1188,7 +1200,7 @@ class DataValidationFolder:
                          delete: bool = False,
                          ):
         """go through each file in the current folder (self) and look for valid copies in the backup folders"""
-        if not self.backups():
+        if not self.backup_paths():
             print(
                 f"{self.__class__}: no backup locations specified - use 'folder.add_backup(path)' to add one or more backup locations"
             )
@@ -1260,7 +1272,7 @@ class DataValidationFolder:
 
                 if not hits:
                     # check backup for similar files
-                    for b_folder in self.backups():
+                    for b_folder in self.backup_paths():
                         b = DataValidationFolder(b_folder)
                         if b.accessible:
                             b_file = pathlib.Path(b.path / pathlib.Path(file.path).relative_to(self.path))
@@ -1329,7 +1341,7 @@ class DataValidationFolder:
                     # print summary of file comparisons
                     report(file, extant_unique_hits)
                 if delete:
-                    for backup in self.backups():
+                    for backup in self.backup_paths():
                         column_width = 120 # for display of line separators
                         def display_name(DVFile: DataValidationFile) -> str:
                             min_len_filename = 80
