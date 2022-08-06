@@ -58,13 +58,15 @@ R"""Tools for validating neuropixels data files from ecephys recording sessions.
     
     Typical usage:
 
-    x = DataValidationFileCRC32(
+    import data_validation as dv
+    
+    x = dv.CRC32DataValidationFile(
         path=
         R'\\allen\programs\mindscope\workgroups\np-exp\1190290940_611166_20220708\1190258206_611166_20220708_surface-image1-left.png'
     )
     print(f'checksum is auto-generated for small files: {x.checksum}')
 
-    y = DataValidationFileCRC32(
+    y = dv.CRC32DataValidationFile(
         checksum=x.checksum, 
         size=x.size, 
         path='/dir/1190290940_611166_20220708_foo.png'
@@ -78,7 +80,7 @@ R"""Tools for validating neuropixels data files from ecephys recording sessions.
     # evaluate to False
     
     # connecting to a database:
-    db = MongoDataValidationDB()
+    db = dv.MongoDataValidationDB()
     db.add_file(x)
     
     # to see large-file checksum performance (~400GB file)
@@ -242,8 +244,8 @@ class Session:
 
         self.folder = self.__class__.folder(path)
         # TODO maybe not do this - could be set to class without realizing - just assign for instances
-        self.lims_path = self.__class__.lims_path(path)
-        self.npexp_path = self.__class__.npexp_path(path)
+        # self.lims_path = self.__class__.lims_path(path)
+        # self.npexp_path = self.__class__.npexp_path(path)
 
         if self.folder:
             # extract the constituent parts of the session folder
@@ -620,6 +622,8 @@ class DataValidationFile(abc.ABC):
         else:      # insufficient information
             return self.__class__.Match.UNKNOWN.value
 
+    def __hash__(self):
+        return hash(self.checksum) ^ hash(self.size) ^ hash(self.path)
 
 class CRC32DataValidationFile(DataValidationFile, SessionFile):
 
@@ -1433,7 +1437,6 @@ def test_data_validation_file():
 test_data_validation_file()
 
 
-
 def report(file: DataValidationFile, comparisons: List[DataValidationFile]):
     """ report on the contents of the folder, compared to database
         """
@@ -1480,3 +1483,11 @@ def report(file: DataValidationFile, comparisons: List[DataValidationFile]):
     logging.info("\n")
     logging.info("#" * column_width)
 
+
+def main():
+    x = CRC32DataValidationFile(path=R'\\allen\programs\mindscope\workgroups\np-exp\1190290940_611166_20220708\1190258206_611166_20220708_surface-image1-left.png')
+    print(x.checksum)
+    
+if __name__ == "__main__":
+    main()
+    
