@@ -1054,7 +1054,8 @@ class CRC32JsonDataValidationDB(DataValidationDB):
 
 class DataValidationFolder:
 
-    db: Type[DataValidationDB] = None
+    db: Type[DataValidationDB] = MongoDataValidationDB
+    files: List[DataValidationFile] = list() 
     backup_paths: Set[str] = set()
     generate_large_checksums: bool = True
     regenerate_large_checksums: bool = False
@@ -1062,23 +1063,16 @@ class DataValidationFolder:
     upper_size_limit = 1024**3 * 5 # GB - files above this won't have checksums generated unless generate_large_checksums == True
 
     def __init__(self, path: str):
-        """ 
-        represents a folder for which we want to checksum the contents and add to database
+        """Represents a folder for which we want to checksum the contents and add to database,
         possibly deleting if a valid copy exists elswhere
         """
-        #* methods :
-        #* __init__ check is folder, exists
-        #*       possibly add all files in subfolders as DataValidationFile objects
-        #* add_contents_to_database
-        #* generate_large_checksums
-        #*
 
         # extract the session ID from anywhere in the path (not reqd)
         try:
             self.session = Session(path)
         except:
-            pass
-
+            self.session = None
+            
         # ensure the path is a directory, not a file
         # if the file doesn't exist, we have to assume based on lack of file extension
         self.accessible = os.path.exists(path)
@@ -1094,10 +1088,20 @@ class DataValidationFolder:
             raise ValueError(f"{self.__class__}: path must point to a folder {path}")
         else:
             self.path = pathlib.Path(path).as_posix()
-
-        # TODO lookup all possible locations for same session folder name
-
-    def add_backup(self, path: Union[str, List[str]]):
+        
+        if self.session:
+            # get the lims folder for this session and add it to the backup paths
+            self.lims_path = self.session.lims_path(self.path)
+            if self.lims_path:
+                self.add_backup_path(self.lims_path)
+            
+            # get the npexp folder for this session and add it to the backup paths (if it exists)
+            self.npexp_path = self.session.npexp_path(self.path)
+            if self.npexp_path and os.path.exists(self.npexp_path):
+                self.add_backup_path(self.npexp_path)
+        
+            
+    def add_backup_path(self, path: Union[str, List[str]]):
         """Store one or more paths to folders containing backups for the session"""
         if path and (isinstance(path, str) or isinstance(path, pathlib.Path)):
             path = [str(path)]
@@ -1110,9 +1114,19 @@ class DataValidationFolder:
             if str(p) != '':
                 self.backup_paths.add(str(p))
 
+    #TODO: 'add' : 
+    # * generate_checksum_if_not_in_database
+    
+    #TODO: 'clear' : 
+    # * exchange_if_checksum_in_database
+    # * generate_checksum_if_not_in_database
+    # * exchange_if_checksum_in_database
+    # * exchange_if_checksum_in_database
+
     def backups(self) -> List[str]:
         """Return a list of Folder objects containing backups for the session"""
         return list(self.backup_paths)
+
 
     def validate_backups(self,
                          verbose: bool = True,
@@ -1125,13 +1139,14 @@ class DataValidationFolder:
                 f"{self.__class__}: no backup locations specified - use 'folder.add_backup(path)' to add one or more backup locations"
             )
             return
+        
         if not self.accessible:
             print(f"{self.__class__}: folder not accessible")
             # TODO implement standard file list for comparison without accessbile folder
             return
 
         results = {}
-        for root, _, files in os.walk(self.path):
+        for root, _, files in os.walk(self.path, followlinks=True):
             for f in files:
 
                 # create new file object
@@ -1283,22 +1298,8 @@ class DataValidationFolder:
                                 # report on extant backup:
                                 logging.info(display_str(f"{file.Match(file==euh).name}", euh))
 
-                                # return
 
-        # # aggregate results and write or print summary
-        # if results and log_dir and isinstance(log_dir,str):
-        #     pathlib.Path(log_dir).mkdir(exist_ok=True, parents=True)
-        #     log_path = f"{log_dir}/{file.session.folder}-backup_validation_log.yaml"
-        #     # if os.path.exists(log_path):
-        #     #     with open(log_path,'r') as j:
-        #     #         r = yaml.load(j)
-        #     #         results = {**r, **results}
-        #     with open(log_path, 'w') as j:
-        #         yaml.dump(results, j, sort_keys=True, default_flow_style=False)
-        # elif results:
-        #     pprint.pprint(results)
-
-    def add_folder_to_db(self, path: str = None) -> List[DataValidationFile]:
+    def add_to_db(self, path: str = None) -> List[DataValidationFile]:
         """add all contents of instance folder or a specified folder (all files in all subfiles) to the database
         """
 
@@ -1385,9 +1386,16 @@ class DataValidationFolder:
         return file_objects
 
     #TODO for implementation, add a backup database to check, to save generating twice
-    def clear_dir(self, path: str):
+    def clear_dir(self, path: str, filter: str = None):
         """Clear the contents of a folder if backups exist"""
-        pass
+        for root, _, files in os.walk(self.path): #TODO update use subfolder option
+            for file in files:
+                if filter and isinstance(filter, str) and filter not in file:
+                    continue
+                file = self.DVFile(os.path.join(root, file))
+                if file not in self.files:
+                    self.files.append(file)
+                    self.db.add_file(file=file)
 
 
 

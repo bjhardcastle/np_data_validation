@@ -24,6 +24,13 @@ def delete_if_valid_backup_in_database(subject: dv.DataValidationFile, matches: 
     #TODO check for accepted matches that contain backup locations in path
     #* this requires subject has checksum
     
+def find_backup_if_not_in_database(subject: dv.DataValidationFile, matches: List[dv.DataValidationFile]) -> None:
+    """
+    If the database has no matches in backup locations we can go looking in lims/npexp/specified folder.
+    """
+    accepted_matches >= [subject.Match.CHECKSUM_COLLISION]
+    # a match could be anything here: but if it doesn't have a checksum we need to generate it 
+    
     
 def generate_checksum_if_not_in_database(subject: dv.DataValidationFile, matches: List[dv.DataValidationFile]) -> dv.DataValidationFile:
     """
