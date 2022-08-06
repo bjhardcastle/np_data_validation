@@ -28,16 +28,17 @@ def find_backup_if_not_in_db(subject: dv.DataValidationFile, matches: List[dv.Da
     """
     If the database has no matches in backup locations we can go looking in lims/npexp/specified folder.
     """
-    accepted_matches >= [subject.Match.CHECKSUM_COLLISION]
+    # accepted_matches >= [subject.Match.CHECKSUM_COLLISION]
     # a match could be anything here: but if it doesn't have a checksum we need to generate it 
     
     
-def generate_checksum_if_not_in_db(subject: dv.DataValidationFile, matches: List[dv.DataValidationFile]) -> dv.DataValidationFile:
+def generate_checksum_if_not_in_db(subject: dv.DataValidationFile, db: dv.DataValidationDB) -> dv.DataValidationFile:
     """
     If the database has no entry for the subject file, generate a checksum for it.
     """
     accepted_matches = [subject.Match.SELF, subject.Match.SELF_NO_CHECKSUM]
     #TODO generate and add to db, after checking that there are no existing matches
+    
     
     
 def regenerate_checksums_on_mismatch(subject: dv.DataValidationFile, other: dv.DataValidationFile) -> None:
