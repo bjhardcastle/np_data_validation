@@ -6,13 +6,26 @@ from typing import List
 import data_validation as dv
 
 
-def exchange_if_checksum_in_db(subject: dv.DataValidationFile, matches: List[dv.DataValidationFile]) -> dv.DataValidationFile:
+def exchange_if_checksum_in_db(subject: dv.DataValidationFile, db: dv.DataValidationDB) -> dv.DataValidationFile:
     """
     If the database has an entry for the subject file that already has a checksum, swap 
     the subject for the entry in the database. Saves us regenerating checksums for large files.
+    If not, return the subject.
     """
-    accepted_matches = [subject.Match.SELF, subject.Match.SELF_NO_CHECKSUM]
-    # 
+    if subject.checksum:
+        return subject
+    
+    accepted_matches = subject.Match.SELF_NO_CHECKSUM
+    matches = db.get_matches(subject, match=accepted_matches)
+    
+    if not matches:
+        return subject
+    
+    if len(matches) == 1:
+        return matches[0]
+    else:
+        # multiple matches with different checksums: should regenerate checksum
+        return subject
 
 
 def delete_if_valid_backup_in_db(subject: dv.DataValidationFile, matches: List[dv.DataValidationFile]) -> None:
@@ -24,6 +37,7 @@ def delete_if_valid_backup_in_db(subject: dv.DataValidationFile, matches: List[d
     #TODO check for accepted matches that contain backup locations in path
     #* this requires subject has checksum
     
+    
 def find_backup_if_not_in_db(subject: dv.DataValidationFile, matches: List[dv.DataValidationFile]) -> None:
     """
     If the database has no matches in backup locations we can go looking in lims/npexp/specified folder.
@@ -31,14 +45,22 @@ def find_backup_if_not_in_db(subject: dv.DataValidationFile, matches: List[dv.Da
     # accepted_matches >= [subject.Match.CHECKSUM_COLLISION]
     # a match could be anything here: but if it doesn't have a checksum we need to generate it 
     
-    
+
+def new_file_with_checksum(subject: dv.DataValidationFile):
+    """Get a new file to avoid modifying the original.
+    """
+    checksum = subject.generate_checksum(subject.path, subject.size)
+    return dv.DataValidationFile(path=subject.path, size=subject.size, checksum=checksum)
+
+
 def generate_checksum_if_not_in_db(subject: dv.DataValidationFile, db: dv.DataValidationDB) -> dv.DataValidationFile:
     """
     If the database has no entry for the subject file, generate a checksum for it.
     """
     accepted_matches = [subject.Match.SELF, subject.Match.SELF_NO_CHECKSUM]
-    #TODO generate and add to db, after checking that there are no existing matches
-    
+    matches = db.get_matches(subject, match=accepted_matches)
+    if not matches:
+        db.add_file(new_file_with_checksum(subject))
     
     
 def regenerate_checksums_on_mismatch(subject: dv.DataValidationFile, other: dv.DataValidationFile) -> None:

@@ -120,6 +120,7 @@ try:
 except ImportError:
     print("pymongo not installed")
     
+import strategies # for interacting with database
 import data_getters as dg  # from corbett's QC repo
 
 # LOG_DIR = fR"//allen/programs/mindscope/workgroups/np-exp/ben/data_validation/logs/"
@@ -818,11 +819,13 @@ class MongoDataValidationDB(DataValidationDB):
         if not file:
             file = cls.DVFile(path=path, size=size, checksum=checksum)
 
-        # with cls.db as db:
         entries = list(cls.db.find({
             "session_id": file.session.id,
         }))
-                           
+        
+        if not entries:
+            return None
+                 
         matches = set(
             cls.DVFile(
                 path=entry['path'],
@@ -1126,10 +1129,8 @@ class DataValidationFolder:
         return self._file_paths
     
     
-    import strategies
-    
-    def add(self):
-        "Add all files in folder to database, if they don't already exist"
+    def add_to_db(self):
+        "Add all files in folder to database if they don't already exist"
         for path in self.file_paths:
             try:
                 file = self.db.DVFile(path=path.as_posix())
@@ -1137,95 +1138,10 @@ class DataValidationFolder:
                 logging.info(f"{self.__class__}: could not add to database, likely missing session ID: {path.as_posix()}")
                 continue
             
-            if self.generate_large_checksums:
+            if file.size < self.upper_size_limit or self.generate_large_checksums:
                 strategies.generate_checksum_if_not_in_db(file, self.db)
         
-    def add_to_db(self, path: str = None) -> List[DataValidationFile]:
-        """add all contents of instance folder or a specified folder (all files in all subfiles) to the database
-        """
-
-        if not self.db:
-            raise ValueError(f"{self.__class__}: no database specified")
-
-        if not path and self.accessible:
-            # no folder specified, assume the current (self) folder is the target
-            path = self.path
-        elif path and os.path.exists(path):
-            pass
-        else:
-            # no accessible folder supplied
-            print(f"{self.__class__}: add_folder_to_db not implemented, not accessible: {path}")
-            return
-
-        file_objects = []
-        if self.include_subfolders:
-            files = [child for child in pathlib.Path(path).rglob('*') if not child.is_dir()]
-        else:
-            files = [child for child in pathlib.Path(path).iterdir() if not child.is_dir()]
-
-        for f in files:
-            if isinstance(f, str):
-                f = pathlib.Path(f)
-
-            # create new file object
-            try:
-                file = self.db.DVFile(path=f.as_posix())
-            except (ValueError, TypeError):
-                print(f"{self.__class__}: invalid file, not added to database: {f.as_posix()}")
-                continue
-
-            # check whether it exists in current database already
-            matches, match_type = self.db.get_matches(file=file)
-
-            def add(f):
-                '''add file to database'''
-                self.db.add_file(file=f)
-                file_objects.append(f)
-
-            def gen(f):
-                '''generate checksum for file and add to database'''
-                print(f.path)
-                f.checksum = f.generate_checksum(f.path,f.size)
-                add(f)
-
-            #* move the following to some external function that applies a common logic for tasks
-            # apply_strategy(file, strategy='add_to_db'/'delete_if_backed_up')
-            if file.Match.SELF in match_type:
-                # we've re-checksummed the file and it matches a db entry
-                continue
-
-            elif file.Match.OTHER_NO_CHECKSUM in match_type:
-                # we have a checksum, but the db entry doesnt:
-                add(file)
-                continue
-            
-            elif file.Match.SELF_NO_CHECKSUM in match_type:
-                # we have no checksum, but the db entry does:
-                #! choice here is to accept a possibly stale checksum or regenerate one
-                # TODO compare date of checksum in db to some age limit
-                if file.size > self.upper_size_limit \
-                    or not self.regenerate_large_checksums \
-                    : # accept the db checksum if the file size is over a size threshold
-                    continue
-                else:
-                    # regenerate the checksum and add to db
-                    gen(file)
-                    continue
-
-            elif not matches and file.checksum:
-                # there are no entries in the db for this filepath
-                add(file)
-                continue
-            elif not matches and (file.size < self.upper_size_limit or self.generate_large_checksums):
-                gen(file)
-                continue
-            else:
-                # file is too large, no checksum generated
-                logging.info(f"{self.__class__}: file too large, not added to database: {file.path}")
-                continue
-
-        return file_objects
-
+        
     #TODO: 'clear' : 
     # * exchange_if_checksum_in_db
     # * generate_checksum_if_not_in_db
