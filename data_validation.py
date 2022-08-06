@@ -1055,7 +1055,6 @@ class CRC32JsonDataValidationDB(DataValidationDB):
 class DataValidationFolder:
 
     db: Type[DataValidationDB] = MongoDataValidationDB
-    files: List[DataValidationFile] = list() 
     backup_paths: Set[str] = set()
     generate_large_checksums: bool = True
     regenerate_large_checksums: bool = False
@@ -1099,7 +1098,7 @@ class DataValidationFolder:
             self.npexp_path = self.session.npexp_path(self.path)
             if self.npexp_path and os.path.exists(self.npexp_path):
                 self.add_backup_path(self.npexp_path)
-        
+    
             
     def add_backup_path(self, path: Union[str, List[str]]):
         """Store one or more paths to folders containing backups for the session"""
@@ -1114,6 +1113,23 @@ class DataValidationFolder:
             if str(p) != '':
                 self.backup_paths.add(str(p))
 
+    @property
+    def file_paths(self) -> List[DataValidationFile]:
+        """return a list of files in the folder"""
+        if hasattr(self, '_file_paths'):
+            return self._file_paths
+        
+        self._file_paths = set()
+        if self.include_subfolders:
+            for dirpath, _, filename in os.walk(self.path, followlinks=True):
+                self._file_paths.add(pathlib.Path(dirpath, filename))
+        else:
+            for filename in os.listdir(self.path):
+                self._file_paths.add(pathlib.Path(filename))
+                
+        return self._file_paths
+    
+    
     #TODO: 'add' : 
     # * generate_checksum_if_not_in_db
     
