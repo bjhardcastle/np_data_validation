@@ -245,8 +245,6 @@ class Session:
 
         self.folder = self.__class__.folder(path)
         # TODO maybe not do this - could be set to class without realizing - just assign for instances
-        # self.lims_path = self.__class__.lims_path(path)
-        # self.npexp_path = self.__class__.npexp_path(path)
 
         if self.folder:
             # extract the constituent parts of the session folder
@@ -272,24 +270,24 @@ class Session:
             return session_folders[0]
         else:
             return None
-        
-    @classmethod
-    def npexp_path(cls, path) -> Union[str, None]:
+    
+    @property
+    def npexp_path(self) -> Union[pathlib.Path, None]:
         '''get session folder from path/str and combine with npexp root to get folder path on npexp'''        
-        folder = cls.folder(path)
+        folder = self.folder
         if not folder:
             return None
-        return cls.NPEXP_ROOT / folder
+        return self.NPEXP_ROOT / folder
 
-    @classmethod
-    def lims_path(cls, path) -> Union[str, None]:
+    @property
+    def lims_path(self) -> Union[pathlib.Path, None]:
         '''get lims id from path/str and lookup the corresponding directory in lims'''
-        folder = cls.folder(path)
+        folder = self.folder
         if not folder:
             return None
         
         try:
-            lims_dg = dg.lims_data_getter(cls(path).id)
+            lims_dg = dg.lims_data_getter(self.id)
             WKF_QRY =   '''
                         SELECT es.storage_directory
                         FROM ecephys_sessions es
@@ -298,7 +296,7 @@ class Session:
             lims_dg.cursor.execute(WKF_QRY.format(lims_dg.lims_id))
             exp_data = lims_dg.cursor.fetchall()
             if exp_data and exp_data[0]['storage_directory']:
-                return str('/'+exp_data[0]['storage_directory'])
+                return pathlib.Path('/'+exp_data[0]['storage_directory'])
             else:
                 return None
             
@@ -822,7 +820,7 @@ class MongoDataValidationDB(DataValidationDB):
         """
         if not file:
             file = cls.DVFile(path=path, size=size, checksum=checksum)
-
+        
         entries = list(cls.db.find({
             "session_id": file.session.id,
         }))
@@ -845,13 +843,13 @@ class MongoDataValidationDB(DataValidationDB):
                 return [o for o in matches if (file == o) == match_type > 0]
 
         if not match:
-            return [o for o in matches if (file == o) > 0], \
-                [(file == o) for o in matches if (file == o) > 0]
+            return [o for o in matches if (file == o) > 0]
         
         filtered_matches = []
+        match = [match] if not isinstance(match, list) else match
         for m in match:
-            filtered_matches.append(filter_on_match_type(m))
-        return filtered_matches, [(file==fm) for fm in filtered_matches]
+            filtered_matches += (filter_on_match_type(m))
+        return filtered_matches
 
 
 
@@ -1088,12 +1086,12 @@ class DataValidationFolder:
         
         if self.session:
             # get the lims folder for this session and add it to the backup paths
-            self.lims_path = self.session.lims_path(self.path)
+            self.lims_path = self.session.lims_path
             if self.lims_path:
                 self.add_backup_path(self.lims_path)
             
             # get the npexp folder for this session and add it to the backup paths (if it exists)
-            self.npexp_path = self.session.npexp_path(self.path)
+            self.npexp_path = self.session.npexp_path
             if self.npexp_path and os.path.exists(self.npexp_path):
                 self.add_backup_path(self.npexp_path)
     
@@ -1147,7 +1145,14 @@ class DataValidationFolder:
         
         
     def clear(self):
-        """Clear the folder of files which are backed-up on LIMS or np-exp""" 
+        """Clear the folder of files which are backed-up on LIMS or np-exp, or any added backup paths""" 
+        if not self.backup_paths:
+            logging.warning(
+                f"{self.__class__}: no backup locations specified - use 'folder.add_backup(path)' to add one or more backup locations"
+            )
+            return 
+        
+        deleted_bytes = [] # keep a tally of space recovered
         for path in self.file_paths:
             try:
                 file = self.db.DVFile(path=path.as_posix())
@@ -1155,46 +1160,14 @@ class DataValidationFolder:
                 logging.info(f"{self.__class__}: could not add to database, likely missing session ID: {path.as_posix()}")
                 continue
             
-     # backups = strategies.find_backup_in_db(file, self.db, self.backup_paths)
-    # * find_backup_if_not_in_db
-    # * delete_if_valid_backup_in_db
-
-
-    def find_valid_backups(self, file: DataValidationFile) -> List[DataValidationFile]:
-        #TODO ?move to strategies? the reason not to is that lims path takes time to fetch, prefer getting once for
-    #   and assembling with relative file paths, instead of repeat calls when fetching per file
-        if not self.backup_paths():
-            logging.warning(
-                f"{self.__class__}: no backup locations specified - use 'folder.add_backup(path)' to add one or more backup locations"
-            )
-            return 
-        
-        if not file.checksum:
-            file = strategies.exchange_if_checksum_in_db(file, self.db)
-        if not file.checksum:
-                file = strategies.generate_checksum(file, self.db)
+            # backups = strategies.find_valid_backups(file, self.db, self.backup_paths)
+            # if backups:
+                # logging.info(f"{self.__class__}: DELETING {file.path}")
+            # TODO: second call to query db below - can consolidate into one call
+            deleted_bytes.append(strategies.delete_if_valid_backup_in_db(file, self.db))
             
-        if strategies.find_invalid_copies_in_db(file, self.db):
-            logging.warning(f"{self.__class__}: found invalid copies for {file.path}")
-            return None
-        
-        matches = strategies.find_valid_copies_in_db(file, self.db)
-        if matches:
-            #* check files are currently on lims and npexp 
-            backups = [
-                match for match in matches
-                if (self.lims_path in match.path and match.accessible)
-                or (self.npexp_path in match.path and match.accessible)
-                ] or None
-            
-        if not matches or not backups:
-            backups = []
-            for backup_path in self.backup_paths:
-                backup = self.db.DVFile(pathlib.Path(backup_path, file.relative_path()).as_posix())
-                if backup.accessible:
-                    backups.append(strategies.generate_checksum(backup))
-        
-        return backups or None
+        print(f"{len(deleted_bytes)} files deleted from: {self.path}\n\t{sum(deleted_bytes) / 1024**3 :.1f} GB recovered")
+    
     
     def validate_backups(self,
                          verbose: bool = True,
@@ -1202,7 +1175,7 @@ class DataValidationFolder:
                          delete: bool = False,
                          ):
         """go through each file in the current folder (self) and look for valid copies in the backup folders"""
-        if not self.backup_paths():
+        if not self.backup_paths:
             print(
                 f"{self.__class__}: no backup locations specified - use 'folder.add_backup(path)' to add one or more backup locations"
             )
@@ -1233,8 +1206,8 @@ class DataValidationFolder:
                     self.db.add_file(file)
 
                 # check in current database for similar files
-                matches, match_types = self.db.get_matches(file=file)
-
+                matches = self.db.get_matches(file=file)
+                match_types = [(file==m) for m in matches]
                 if not file.checksum \
                     and file.Match.SELF_NO_CHECKSUM in match_types:
 
@@ -1268,13 +1241,14 @@ class DataValidationFolder:
                     continue
 
                 # check again in current database for similar files
-                matches, match_types = self.db.get_matches(file=file)
+                matches = self.db.get_matches(file=file)
+                match_types = [(file==m) for m in matches]
                 # now filter for matches with self and unrelated files
                 hits = [x for i, x in enumerate(matches) if match_types[i] >= file.Match.CHECKSUM_COLLISION]
 
                 if not hits:
                     # check backup for similar files
-                    for b_folder in self.backup_paths():
+                    for b_folder in self.backup_paths:
                         b = DataValidationFolder(b_folder)
                         if b.accessible:
                             b_file = pathlib.Path(b.path / pathlib.Path(file.path).relative_to(self.path))
@@ -1297,7 +1271,8 @@ class DataValidationFolder:
                                         self.db.add_file(bb)
 
                 # check again in current database for similar files
-                matches, match_types = self.db.get_matches(file=file)
+                matches = self.db.get_matches(file=file)
+                match_types = [(file==m) for m in matches]
                 # now filter for matches with self and unrelated files
                 hits = [x for i, x in enumerate(matches) if match_types[i] >= file.Match.CHECKSUM_COLLISION]
 
@@ -1343,7 +1318,7 @@ class DataValidationFolder:
                     # print summary of file comparisons
                     report(file, extant_unique_hits)
                 if delete:
-                    for backup in self.backup_paths():
+                    for backup in self.backup_paths:
                         column_width = 120 # for display of line separators
                         def display_name(DVFile: DataValidationFile) -> str:
                             min_len_filename = 80
@@ -1480,6 +1455,9 @@ def report(file: DataValidationFile, comparisons: List[DataValidationFile]):
 def main():
     x = CRC32DataValidationFile(path=R'\\allen\programs\mindscope\workgroups\np-exp\1190290940_611166_20220708\1190258206_611166_20220708_surface-image1-left.png')
     print(x.checksum)
+    m = R"\\w10dtsm112722\C\ProgramData\AIBS_MPE\mvr\data\1175087162_612802_20220504"
+    f = DataValidationFolder(m)
+    f.clear()
     
 if __name__ == "__main__":
     main()

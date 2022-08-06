@@ -1,8 +1,11 @@
 """Strategies for looking up DataValidationFiles in a database and performing some action depending on context."""
 
+from __future__ import annotations
 
-from typing import List
+import pathlib
+from typing import TYPE_CHECKING, List, Union
 
+# if TYPE_CHECKING:
 import data_validation as dv
 
 
@@ -32,12 +35,24 @@ def generate_checksum_if_not_in_db(subject: dv.DataValidationFile, db: dv.DataVa
     if not matches:
         generate_checksum(subject, db)
 
-    
+
+def ensure_checksum(subject: dv.DataValidationFile, db: dv.DataValidationDB) -> dv.DataValidationFile:
+    """
+    If the database has no entry for the subject file, generate a checksum for it.
+    """
+    if not subject.checksum:
+        subject = exchange_if_checksum_in_db(subject, db)
+    if not subject.checksum:
+        subject = generate_checksum(subject, db)
+    return subject
+
+
 def find_invalid_copies_in_db(subject: dv.DataValidationFile, db: dv.DataValidationDB) -> List[dv.DataValidationFile]:
     """
     Check for invalid copies of the subject file in database.
     """
-    matches, match_type = db.get_matches(subject)
+    matches = db.get_matches(subject)
+    match_type = [(subject == match) for match in matches]
     return [
         m for i,m in enumerate(matches) 
         if match_type[i] >= subject.Match.CHECKSUM_COLLISION 
@@ -76,23 +91,67 @@ def exchange_if_checksum_in_db(subject: dv.DataValidationFile, db: dv.DataValida
         return subject
 
 
-def delete_if_valid_backup_in_db(subject: dv.DataValidationFile, matches: List[dv.DataValidationFile]) -> None:
+def delete_if_valid_backup_in_db(subject: dv.DataValidationFile, db: dv.DataValidationDB) -> int:
     """
     If the database has an entry for the subject file in known backup locations, or a new specified location, we can
-    delete the subject.
-    """
-    accepted_matches = [subject.Match.VALID_COPY_RENAMED, subject.Match.VALID_COPY_SAME_NAME]
-    #TODO check for accepted matches that contain backup locations in path
-    #* this requires subject has checksum
+    delete the subject. 
+    This is just a safety measure to prevent calling 'find_valid_backups' and deleting the returned list of backups!
+    """               
+    subject = ensure_checksum(subject, db)
+    backups = find_valid_backups(subject, db)
+    if backups:
+        dv.report(subject, backups)
+        # a final check before deleting (all items in 'backups' should be valid copies):
+        if (subject.checksum != backups[0].checksum or subject.size != backups[0].size):
+            raise AssertionError(f"Not a valid backup, something has gone wrong: {subject} {backups[0]}")
+        
+        try:
+            pathlib.Path(subject.path).unlink()
+            dv.logging.info(f"DELETED {subject.path}")
+            return subject.size
+        except PermissionError:
+            dv.logging.info(f"Permission denied: could not delete {subject.path}")
+    return 0
+
+
+def find_valid_backups(subject: dv.DataValidationFile, db: dv.DataValidationDB, backup_paths: Union[List[str], List[pathlib.Path]] = None) -> List[dv.DataValidationFile]:
+    if not backup_paths:
+        backup_paths = set()
+    else:
+        backup_paths = set(backup_paths)
+    backup_paths.add(subject.session.lims_path.as_posix())
+    backup_paths.add(subject.session.npexp_path.as_posix())
+        
+    if not backup_paths:
+        return None
     
+    subject = ensure_checksum(subject, db)
     
-def find_backup_if_not_in_db(subject: dv.DataValidationFile, matches: List[dv.DataValidationFile]) -> None:
-    """
-    If the database has no matches in backup locations we can go looking in lims/npexp/specified folder.
-    """
-    # accepted_matches >= [subject.Match.CHECKSUM_COLLISION]
-    # a match could be anything here: but if it doesn't have a checksum we need to generate it 
-      
+    invalid_backups = find_invalid_copies_in_db(subject, db)
+    if invalid_backups:
+        dv.report(subject, invalid_backups)
+        return None
+    
+    matches = find_valid_copies_in_db(subject, db)
+    
+    backups = set()
+    if matches:
+        
+        for match in matches:
+            for backup_path in backup_paths:
+                if match.path.startswith(backup_path):
+                    backups.add(match)
+        
+    else:
+        
+        for backup_path in backup_paths:
+            backup = db.DVFile(pathlib.Path(backup_path, subject.relative_path()).as_posix())
+            if backup.accessible:
+                backups.add(generate_checksum(backup, db))
+    
+    return list(backups) or None
+    
+
 def regenerate_checksums_on_mismatch(subject: dv.DataValidationFile, other: dv.DataValidationFile) -> None:
     """
     If the database has an entry for the subject file that has a different checksum, regenerate the checksum for it.
