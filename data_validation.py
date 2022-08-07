@@ -107,13 +107,14 @@ import logging.handlers
 import mmap
 import os
 import pathlib
+from pydoc import doc
 import re
 import shelve
 import sys
 import tempfile
 import traceback
 import zlib
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Type, Union
+from typing import Any, Callable, Dict, Generator, List, Optional, Set, Tuple, Type, Union
 
 try:
     import pymongo
@@ -122,6 +123,7 @@ except ImportError:
     
 import data_getters as dg  # from corbett's QC repo
 import strategies  # for interacting with database
+import timing
 
 # LOG_DIR = fR"//allen/programs/mindscope/workgroups/np-exp/ben/data_validation/logs/"
 logging.basicConfig(format="%(asctime)s %(levelname)s %(message)s", filename="data_validation.log", level=logging.DEBUG,datefmt="%Y-%m-%d %H:%M")
@@ -654,11 +656,6 @@ class CRC32DataValidationFile(DataValidationFile, SessionFile):
         # try:
         SessionFile.__init__(self, path)
         DataValidationFile.__init__(self, path=path, checksum=checksum, size=size)
-        # except AttributeError:
-        #     print(f"{self.__class__.__name__}: no session dir in path")
-        #     clear(self)
-        #     return
-
         # if not hasattr(self, "accessible"):
         #     self.accessible = os.path.exists(self.path)
 
@@ -1114,16 +1111,8 @@ class DataValidationFolder:
     @property
     def file_paths(self) -> List[DataValidationFile]:
         """return a list of files in the folder"""
-        if hasattr(self, '_file_paths'):
+        if hasattr(self, '_file_paths') and self._file_paths:
             return self._file_paths
-        
-        # self._file_paths = set()
-        # if self.include_subfolders:
-        #     for dirpath, _, filename in os.walk(self.path, followlinks=True):
-        #         self._file_paths.add(pathlib.Path(dirpath, filename))
-        # else:
-        #     for filename in os.listdir(self.path):
-        #         self._file_paths.add(pathlib.Path(filename))
         
         if self.include_subfolders:
             self._file_paths = set(child for child in pathlib.Path(self.path).rglob('*') if not child.is_dir())
@@ -1135,7 +1124,7 @@ class DataValidationFolder:
     
     def add_to_db(self):
         "Add all files in folder to database if they don't already exist"
-        for path in self.file_paths:
+        for path in progressbar(self.file_paths, prefix='   - adding to database ', units='files', size=20):
             try:
                 file = self.db.DVFile(path=path.as_posix())
             except (ValueError, TypeError):
@@ -1151,7 +1140,7 @@ class DataValidationFolder:
         """Clear the folder of files which are backed-up on LIMS or np-exp, or any added backup paths""" 
     
         deleted_bytes = [] # keep a tally of space recovered
-        for path in progressbar(self.file_paths, units='files'):
+        for path in progressbar(self.file_paths, prefix=' - checking for backups ', units='files', size=20):
             try:
                 file = self.db.DVFile(path=path.as_posix())
             except (ValueError, TypeError):
@@ -1159,10 +1148,26 @@ class DataValidationFolder:
                 continue
             
             files_bytes = strategies.delete_if_valid_backup_in_db(file, self.db)
-            if any(files_bytes):
-                deleted_bytes += [files for files in files_bytes if files != 0]
+            if files_bytes:
+                # deleted_bytes += [files for files in files_bytes if files != 0]
+                deleted_bytes += files_bytes
         
-        print(f"{self.path}\n{len(deleted_bytes)} files deleted \t|\t{sum(deleted_bytes) / 1024**3 :.1f} GB recovered")
+        # tidy up folder if it's now empty:
+        for f in pathlib.Path(self.path).rglob('*'):
+            # to save finding the total size of the directory, just break on the first file found
+            if f.is_file() and f.stat().st_size > 0:
+                break
+        else:
+            #? could just run this directly to clear all empty subfolders
+            logging.info(f"{self.__class__.__name__}: removing empty folder {self.path}")
+            check_dir_paths = os.walk(self.path, topdown=False, onerror=lambda: None, followlinks=False)
+            for check_dir in check_dir_paths:
+                try:
+                    os.rmdir(check_dir[0])
+                except OSError:
+                    continue
+        
+        print(f"{len(deleted_bytes)} files deleted \t|\t{sum(deleted_bytes) / 1024**3 :.1f} GB recovered")
         return deleted_bytes
     
 
@@ -1261,19 +1266,51 @@ def report(file: DataValidationFile, comparisons: List[DataValidationFile]):
     logging.info("\n")
     logging.info("#" * column_width)
 
-def clear_dir(dir):
+
+def DVFolders_from_dirs(dirs: Union[str, List[str]]) -> Generator[DataValidationFolder, None, None]:
+    """Generator of DataValidationFolder objects from a list of directories"""
+    if not isinstance(dirs, list):
+        dirs = [dirs]
+        
+    def skip(dir) -> bool:
+        skip_filters = ["$RECYCLE.BIN"]
+        if any(skip in str(dir) for skip in skip_filters):
+            return True
+        if not Session.folder(str(dir)):
+            return True
+        
+    for dir in dirs:
+        dir_path = pathlib.Path(dir)
+        if Session.folder(dir):
+            if skip(dir_path):
+                continue
+            else:
+                yield DataValidationFolder(dir_path.as_posix())
+        else:
+            for c in [child for child in dir_path.iterdir() if child.is_dir()]:
+                if skip(c):
+                    continue
+                else:
+                    yield DataValidationFolder(c.as_posix())
+
+    
+def clear_dirs(dirs):
     total_deleted_bytes = [] # keep a tally of space recovered
-    for f in [child for child in pathlib.Path(dir).iterdir() if child.is_dir()]:
-        F = DataValidationFolder(f.as_posix())
+    for F in DVFolders_from_dirs(dirs):
+        print('=' * 50)
+        print(f'Clearing {F.path}')
         F.add_to_db()
         deleted_bytes = F.clear()
         total_deleted_bytes += deleted_bytes 
-    print(f"Finished clearing {dir}.\n{len(total_deleted_bytes)} files deleted \t|\t {sum(total_deleted_bytes) / 1024**3 :.1f} GB recovered")
+        print('=' * 50)
+    print(f"Finished clearing.\n{len(total_deleted_bytes)} files deleted \t|\t {sum(total_deleted_bytes) / 1024**3 :.1f} GB recovered")
+    
         
 def main():
     # x = CRC32DataValidationFile(path=R'\\allen\programs\mindscope\workgroups\np-exp\1190290940_611166_20220708\1190258206_611166_20220708_surface-image1-left.png')
     # print(x.checksum)
-    clear_dir(R"\\w10dtsm112722\C\ProgramData\AIBS_MPE\mvr\data")
+    # clear_dirs(R"\\w10dtsm112722\C\ProgramData\AIBS_MPE\mvr\data")
+    clear_dirs(["A:/", "B:/"])
     # f = R"\\w10dtsm112722\C\ProgramData\AIBS_MPE\mvr\data\1195689894_631510_20220801"
     # F = DataValidationFolder(f)
     # F.add_to_db()
