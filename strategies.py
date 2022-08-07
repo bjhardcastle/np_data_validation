@@ -109,9 +109,12 @@ def delete_if_valid_backup_in_db(subject: dv.DataValidationFile, db: dv.DataVali
         try:
             pathlib.Path(subject.path).unlink()
             dv.logging.info(f"DELETED {subject.path}")
+            
             return subject.size
+        
         except PermissionError:
             dv.logging.info(f"Permission denied: could not delete {subject.path}")
+            
     return 0
 
 

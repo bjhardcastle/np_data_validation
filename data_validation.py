@@ -1158,9 +1158,10 @@ class DataValidationFolder:
                 logging.info(f"{self.__class__.__name__}: could not add to database, likely missing session ID: {path.as_posix()}")
                 continue
             
-            deleted_bytes.append(strategies.delete_if_valid_backup_in_db(file, self.db))
+            files_bytes = strategies.delete_if_valid_backup_in_db(file, self.db)
+            if any(files_bytes):
+                deleted_bytes += [files for files in files_bytes if files != 0]
         
-        deleted_bytes = [d for d in deleted_bytes if d != 0]    
         print(f"{self.path}\n{len(deleted_bytes)} files deleted \t|\t{sum(deleted_bytes) / 1024**3 :.1f} GB recovered")
         return deleted_bytes
     
@@ -1447,12 +1448,13 @@ def report(file: DataValidationFile, comparisons: List[DataValidationFile]):
     logging.info("#" * column_width)
 
 def clear_dir(dir):
-    deleted_bytes = [] # keep a tally of space recovered
+    total_deleted_bytes = [] # keep a tally of space recovered
     for f in [child for child in pathlib.Path(dir).iterdir() if child.is_dir()]:
         F = DataValidationFolder(f.as_posix())
         F.add_to_db()
-        deleted_bytes.append(F.clear())
-    print(f"Finished clearing {dir}.\n{len(deleted_bytes)} files deleted \t|\t {sum(deleted_bytes) / 1024**3 :.1f} GB recovered")
+        deleted_bytes = F.clear()
+        total_deleted_bytes += deleted_bytes 
+    print(f"Finished clearing {dir}.\n{len(total_deleted_bytes)} files deleted \t|\t {sum(total_deleted_bytes) / 1024**3 :.1f} GB recovered")
         
 def main():
     # x = CRC32DataValidationFile(path=R'\\allen\programs\mindscope\workgroups\np-exp\1190290940_611166_20220708\1190258206_611166_20220708_surface-image1-left.png')
