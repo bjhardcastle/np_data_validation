@@ -1054,12 +1054,11 @@ class CRC32JsonDataValidationDB(DataValidationDB):
 class DataValidationFolder:
 
     db: Type[DataValidationDB] = MongoDataValidationDB
-    backup_paths: Set[str] = set()
-    generate_large_checksums: bool = True
-    regenerate_large_checksums: bool = False
+    backup_paths: Set[str] = set() # auto-populated with lims, npexp, sync computer folders
     include_subfolders: bool = True
-    upper_size_limit = 1024**3 * 5 # GB - files above this won't have checksums generated unless generate_large_checksums == True
-
+    upper_size_limit = 1024**4 * 1 # TB - files above this won't have checksums generated
+    regenerate_checksums: bool = False # instead of consulting the database
+    # TODO implement check for regeneration before exchanging
     def __init__(self, path: str):
         """Represents a folder for which we want to checksum the contents and add to database,
         possibly deleting if a valid copy exists elswhere
@@ -1143,9 +1142,10 @@ class DataValidationFolder:
                 logging.info(f"{self.__class__.__name__}: could not add to database, likely missing session ID: {path.as_posix()}")
                 continue
             
-            if file.size < self.upper_size_limit or self.generate_large_checksums:
+            if file.size < self.upper_size_limit:
                 strategies.generate_checksum_if_not_in_db(file, self.db)
-        
+            else:
+                logging.info(f"{self.__class__.__name__}: file {path.as_posix()} is larger than {self.upper_size_limit} bytes, skipping checksum generation")
         
     def clear(self) -> List[int]:
         """Clear the folder of files which are backed-up on LIMS or np-exp, or any added backup paths""" 
@@ -1165,192 +1165,6 @@ class DataValidationFolder:
         print(f"{self.path}\n{len(deleted_bytes)} files deleted \t|\t{sum(deleted_bytes) / 1024**3 :.1f} GB recovered")
         return deleted_bytes
     
-    def validate_backups(self,
-                         verbose: bool = True,
-                         log_dir: str = "//allen/programs/mindscope/workgroups/np-exp/ben/data_validation/logs",
-                         delete: bool = False,
-                         ):
-        """go through each file in the current folder (self) and look for valid copies in the backup folders"""
-        if not self.backup_paths:
-            print(
-                f"{self.__class__.__name__}: no backup locations specified - use 'folder.add_backup(path)' to add one or more backup locations"
-            )
-            return
-        
-        if not self.accessible:
-            print(f"{self.__class__.__name__}: folder not accessible")
-            # TODO implement standard file list for comparison without accessbile folder
-            return
-
-        results = {}
-        for root, _, files in os.walk(self.path, followlinks=True):
-            for f in files:
-
-                # create new file object
-                try:
-                    file = self.db.DVFile(path=os.path.join(root, f))
-                except [ValueError, TypeError]:
-                    logging.info(f"{self.__class__.__name__}: invalid file, not added to database: {f}")
-                    continue
-
-                # generate new checksums for large files if toggled on
-                if not file.checksum \
-                    and (self.regenerate_large_checksums \
-                        or file.size < self.upper_size_limit) \
-                    :
-                    file.checksum = file.generate_checksum(file.path)
-                    self.db.add_file(file)
-
-                # check in current database for similar files
-                matches = self.db.get_matches(file=file)
-                match_types = [(file==m) for m in matches]
-                if not file.checksum \
-                    and file.Match.SELF_NO_CHECKSUM in match_types:
-
-                    # we have entries in db with checksums already generated - we can replace
-                    # the file with the db entry
-
-                    # TODO here we assume that all matching entries have the same checksum
-                    #* we take the last match, hoping they were added to db chronologically
-                    #* but we really want to check a date field to find the most recent matching checksum entry
-                    others_with_checksum = [
-                        x for i, x in enumerate(matches) if match_types[i] == file.Match.SELF_NO_CHECKSUM
-                    ]
-                    if not all(owc.checksum == others_with_checksum[-1].checksum \
-                        for owc in others_with_checksum):
-                        logging.warning(
-                            f"{self.__class__.__name__}: Skipped: {file.path} multiple db entries with different checksums")
-                        continue
-                    else:
-                        file = others_with_checksum[-1]
-
-                # generate checksums for large files only if toggled on
-                elif not file.checksum \
-                    and (file.size < self.upper_size_limit \
-                        or self.generate_large_checksums) \
-                    :
-                    file.checksum = file.generate_checksum(file.path)
-                    self.db.add_file(file)
-
-                elif not file.checksum:
-                    print(f"{self.__class__.__name__}: {file.path} large file, not validated")
-                    continue
-
-                # check again in current database for similar files
-                matches = self.db.get_matches(file=file)
-                match_types = [(file==m) for m in matches]
-                # now filter for matches with self and unrelated files
-                hits = [x for i, x in enumerate(matches) if match_types[i] >= file.Match.CHECKSUM_COLLISION]
-
-                if not hits:
-                    # check backup for similar files
-                    for b_folder in self.backup_paths:
-                        b = DataValidationFolder(b_folder)
-                        if b.accessible:
-                            b_file = pathlib.Path(b.path / pathlib.Path(file.path).relative_to(self.path))
-                            if b_file.exists():
-
-                                bb = self.db.DVFile(path=b_file.as_posix())
-                                bb.checksum = bb.generate_checksum(bb.path)
-                                self.db.add_file(bb)
-
-                            else:
-                                size_match = [
-                                    bbb
-                                    for bbb in pathlib.Path(b.path).glob('*')
-                                    if not bbb.is_dir() and (file.size == os.path.getsize(bbb))
-                                ]
-                                if size_match:
-                                    for sm in size_match:
-                                        bb = self.db.DVFile(path=sm.as_posix())
-                                        bb.checksum = bb.generate_checksum(bb.path)
-                                        self.db.add_file(bb)
-
-                # check again in current database for similar files
-                matches = self.db.get_matches(file=file)
-                match_types = [(file==m) for m in matches]
-                # now filter for matches with self and unrelated files
-                hits = [x for i, x in enumerate(matches) if match_types[i] >= file.Match.CHECKSUM_COLLISION]
-
-                # remove duplicates from hits (ie comparisons (file v other) that return the same value)
-                unique_hits = []
-                while hits:
-                    hit = hits.pop()
-                    for h in hits:
-                        if (h.size == hit.size) \
-                        and (h.path == hit.path) \
-                        and (h.checksum == hit.checksum) \
-                        :
-                            hits.remove(h)
-                    unique_hits.append(hit)
-
-                extant_unique_hits = [x for x in unique_hits if x.accessible]
-
-                # def add_to_results(results,file,other,label):
-                #     datestr = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                #     results.update(
-                #         {f'matches in {backup}': {
-                #             datestr: file.path,
-                #             file.Match(file == euh).name: euh.path
-                #         }})
-
-                # if not unique_hits:
-                #     for uh in unique_hits:
-                #         add_to_results(results, file, uh, "no copies found in db")
-                #     if verbose:
-                #         print(f"no backups found in db for {file.parent}/{file.name}")
-                #     continue # no verifiable backups found
-
-                # for backup in self.backups():
-                #     for euh in extant_unique_hits:
-                #         # check if the entry's path is in the backup folder
-                #         if backup in euh.path:
-                #             add_to_results(results, file, euh, "accessible backups found")
-
-                #         elif not any(x in euh.path for x in self.backups()):
-                #             add_to_results(results, file, euh, "other copies found")
-
-                if verbose and '*.dat' in file.path or '*.npx2' in file.path:
-                    # print summary of file comparisons
-                    report(file, extant_unique_hits)
-                if delete:
-                    for backup in self.backup_paths:
-                        column_width = 120 # for display of line separators
-                        def display_name(DVFile: DataValidationFile) -> str:
-                            min_len_filename = 80
-                            disp = f"{DVFile.path}"
-                            if len(disp) < min_len_filename:
-                                disp += ' ' * (min_len_filename - len(disp))
-                            return disp
-                        def display_str(label: str, DVFile: DataValidationFile) -> str:
-                            disp = f"{label} : {display_name(DVFile)} | {DVFile.checksum or '  none  '} | {DVFile.size or '??'} bytes"
-                            return disp
-                        for euh in extant_unique_hits:
-                            # check if the entry's path is in the backup folder
-                            if backup in euh.path and (file == euh) >= file.Match.VALID_COPY_SAME_NAME:
-
-                                # delete the file from the Validation folder                            
-                                if os.path.exists(file.path):
-                                    logging.info(display_str(f"{file.Match.SELF.name} (DELETED)", file))
-                                    pathlib.Path(file.path).unlink()
-                                    
-                                # report on extant backup:
-                                logging.info(display_str(f"{file.Match(file==euh).name}", euh))
-
-
-
-    #TODO for implementation, add a backup database to check, to save generating twice
-    def clear_dir(self, path: str, filter: str = None):
-        """Clear the contents of a folder if backups exist"""
-        for root, _, files in os.walk(self.path): #TODO update use subfolder option
-            for file in files:
-                if filter and isinstance(filter, str) and filter not in file:
-                    continue
-                file = self.DVFile(os.path.join(root, file))
-                if file not in self.files:
-                    self.files.append(file)
-                    self.db.add_file(file=file)
-
 
 
 def test_data_validation_file():
