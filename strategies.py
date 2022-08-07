@@ -139,7 +139,8 @@ def find_valid_backups(subject: dv.DataValidationFile, db: dv.DataValidationDB, 
     invalid_backups = find_invalid_copies_in_db(subject, db)
     if invalid_backups:
         dv.report(subject, invalid_backups)
-        return None
+        # return None
+        #TODO valid/invalid backups need adjusting to not mix up probeABC/DEF files
     
     matches = find_valid_copies_in_db(subject, db)
     

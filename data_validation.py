@@ -1297,12 +1297,12 @@ def DVFolders_from_dirs(dirs: Union[str, List[str]]) -> Generator[DataValidation
 def clear_dirs(dirs):
     total_deleted_bytes = [] # keep a tally of space recovered
     for F in DVFolders_from_dirs(dirs):
-        print('=' * 50)
+        print('=' * 80)
         print(f'Clearing {F.path}')
         F.add_to_db()
         deleted_bytes = F.clear()
         total_deleted_bytes += deleted_bytes 
-        print('=' * 50)
+        print('=' * 80)
     print(f"Finished clearing.\n{len(total_deleted_bytes)} files deleted \t|\t {sum(total_deleted_bytes) / 1024**3 :.1f} GB recovered")
     
         
