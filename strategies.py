@@ -131,6 +131,7 @@ def find_valid_backups(subject: dv.DataValidationFile, db: dv.DataValidationDB, 
     backup_paths.add('//W10DTSM18306/neuropixels_data/' + subject.session.folder)
     backup_paths.add('//W10DTSM18307/neuropixels_data/' + subject.session.folder)
     
+    # TODO fix order here so lims folder is first, npexp second: converting to list seems to reorder
     backup_paths = list(backup_paths)
     
     subject = ensure_checksum(subject, db)
@@ -150,9 +151,21 @@ def find_valid_backups(subject: dv.DataValidationFile, db: dv.DataValidationDB, 
                 if match.path.startswith(backup_path):
                     backups.add(match)
         
-    else:
-        
+    if not backups:
         for backup_path in backup_paths:
+            try_backup = pathlib.Path(backup_path)
+            if not try_backup.exists():
+                continue
+            try_path = try_backup / subject.relative_path
+            if try_path.exists():
+                    candidate = generate_checksum(db.DVFile(path=try_path.as_posix()), db)
+                    if (subject == candidate) in [db.DVFile.Match.VALID_COPY_RENAMED, db.DVFile.Match.VALID_COPY_SAME_NAME]:
+                        backups.add(candidate)
+                        # could break here instead of checking all backup paths
+                        # but why not get as much info as possible before deleting the file
+                        continue
+            
+            # now we check for any files in the directory with the same size, since the filename may have changed
             try: 
                 dir_contents = os.scandir(backup_path)
             except FileNotFoundError:

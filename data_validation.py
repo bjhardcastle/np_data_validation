@@ -1150,7 +1150,7 @@ class DataValidationFolder:
             files_bytes = strategies.delete_if_valid_backup_in_db(file, self.db)
             if files_bytes:
                 # deleted_bytes += [files for files in files_bytes if files != 0]
-                deleted_bytes += files_bytes
+                deleted_bytes += [files_bytes] if files_bytes != 0 else []
         
         # tidy up folder if it's now empty:
         for f in pathlib.Path(self.path).rglob('*'):
