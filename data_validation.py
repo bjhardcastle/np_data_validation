@@ -140,11 +140,10 @@ def progressbar(it,
                 size=40,
                 file=sys.stdout,
                 units: str = None,
-                unit_scaler: int = None,
+                unit_scaler: int = 1,
                 display: bool = True):
     # from https://stackoverflow.com/a/34482761
     count = len(it)
-    display=False
     def show(j):
         if display:
             x = int(size * j / (count if count != 0 else 1))
@@ -180,7 +179,7 @@ def chunk_crc32(file:Any=None, fsize=None) -> str:
 
     # don't show progress bar for small files
     display = True if fsize > 10 * chunk_size else False
-
+    display=False #*
     crc = 0
     with open(str(file), 'rb', chunk_size) as ins:
         for _ in progressbar(range(int((fsize / chunk_size)) + 1),
@@ -241,7 +240,7 @@ class Session:
 
     def __init__(self, path: str):
         if not isinstance(path, str):
-            raise TypeError(f"{self.__class__} path must be a string")
+            raise TypeError(f"{self.__class__.__name__} path must be a string")
 
         self.folder = self.__class__.folder(path)
         # TODO maybe not do this - could be set to class without realizing - just assign for instances
@@ -251,8 +250,14 @@ class Session:
             self.id = self.folder.split('_')[0]
             self.mouse = self.folder.split('_')[1]
             self.date = self.folder.split('_')[2]
+        elif 'production' and 'prod0' in path:
+            self.id = re.search(R'(?<=_session_)\d{10}', path).group(0)
+            lims_dg = dg.lims_data_getter(self.id)
+            self.mouse = lims_dg.data_dict['external_specimen_name']
+            self.date = lims_dg.data_dict['datestring']
+            self.folder = ('_').join([self.id, self.mouse, self.date])
         else:
-            raise ValueError(f"{self.__class__} path must contain a valid session folder")
+            raise ValueError(f"{self.__class__.__name__} path must contain a valid session folder")
 
     @classmethod
     def folder(cls, path) -> Union[str, None]:
@@ -266,7 +271,7 @@ class Session:
         session_folders = re.findall(session_reg_exp, path)
         if session_folders:
             if not all(s == session_folders[0] for s in session_folders):
-                logging.warning(f"{cls.__class__} Mismatch between session folder strings - file may be in the wrong flder: {path}")
+                logging.warning(f"{cls.__class__} Mismatch between session folder strings - file may be in the wrong folder: {path}")
             return session_folders[0]
         else:
             return None
@@ -282,8 +287,7 @@ class Session:
     @property
     def lims_path(self) -> Union[pathlib.Path, None]:
         '''get lims id from path/str and lookup the corresponding directory in lims'''
-        folder = self.folder
-        if not folder:
+        if not self.folder or self.id:
             return None
         
         try:
@@ -314,7 +318,7 @@ class SessionFile:
         initialization """
 
         if not isinstance(path, (str, pathlib.Path)):
-            raise TypeError(f"{self.__class__}: path must be a str pointing to a file: {type(path)}")
+            raise TypeError(f"{self.__class__.__name__}: path must be a str pointing to a file: {type(path)}")
         if isinstance(path, pathlib.Path):
             path = str(path)
 
@@ -330,7 +334,7 @@ class SessionFile:
             is_file = os.path.isfile(path)
 
         if not is_file:
-            raise ValueError(f"{self.__class__}: path must point to a file {path}")
+            raise ValueError(f"{self.__class__.__name__}: path must point to a file {path}")
         else:
             self.path = path
 
@@ -342,7 +346,7 @@ class SessionFile:
         # extract the session ID from anywhere in the path
         self.session = Session(self.path)
         if not self.session:
-            raise ValueError(f"{self.__class__}: path does not contain a session ID {path}")
+            raise ValueError(f"{self.__class__.__name__}: path does not contain a session ID {path}")
     
     @property
     def root_path(self) -> str:
@@ -356,7 +360,7 @@ class SessionFile:
                 break
             parts = parts[1:]
         else:
-            raise ValueError(f"{self.__class__}: session_folder not found in path {self.path}")
+            raise ValueError(f"{self.__class__.__name__}: session_folder not found in path {self.path}")
         
         return self.path.split(str(parts[0]))[0]
 
@@ -369,13 +373,11 @@ class SessionFile:
         session_folder_path = os.path.join(self.root_path, self.session.folder)
         if os.path.exists(session_folder_path):
             return session_folder_path
-
         # but it might not exist: we could have a file sitting in a folder with a flat structure:
         # assorted files from multiple sessions in a single folder (e.g. LIMS incoming),
         # or a folder which has the session_folder pattern plus extra info
         # appended, eg. _probeABC
-        else:
-            self.session_folder_path = None
+        return None
     
     
     @property
@@ -392,7 +394,7 @@ class SessionFile:
     @property
     def relative_path(self) -> Union[str, None]:
         '''filepath relative to a session folder'''
-        return pathlib.Path(self.session_relative_path.parts[1:])
+        return pathlib.Path(self.session_relative_path.relative_to(self.session.folder))
     
     @property
     def npexp_path(self) -> Union[str, None]:
@@ -443,10 +445,10 @@ class DataValidationFile(abc.ABC):
         """ setup depending on the inputs """
 
         if not (path or checksum):
-            raise ValueError(f"{self.__class__}: either path or checksum must be set")
+            raise ValueError(f"{self.__class__.__name__}: either path or checksum must be set")
 
         if path and not isinstance(path, str):
-            raise TypeError(f"{self.__class__}: path must be a str pointing to a file: {type(path)}")
+            raise TypeError(f"{self.__class__.__name__}: path must be a str pointing to a file: {type(path)}")
 
         self.accessible = os.path.exists(path)
         # ensure the path is a file, not directory
@@ -460,7 +462,7 @@ class DataValidationFile(abc.ABC):
             is_file = os.path.isfile(path)
 
         if not is_file:
-            raise ValueError(f"{self.__class__}: path must point to a file {path}")
+            raise ValueError(f"{self.__class__.__name__}: path must point to a file {path}")
         else:
             self.path = pathlib.Path(path).as_posix()
 
@@ -475,7 +477,7 @@ class DataValidationFile(abc.ABC):
         elif size and isinstance(size, int):
             self.size = size
         elif size and not isinstance(size, int):
-            raise ValueError(f"{self.__class__}: size must be an integer {size}")
+            raise ValueError(f"{self.__class__.__name__}: size must be an integer {size}")
         else:
             self.size = None
 
@@ -508,7 +510,7 @@ class DataValidationFile(abc.ABC):
             # print(f"setting {self.checksum_name} checksum: {value}")
             self._checksum = value
         else:
-            raise ValueError(f"{self.__class__}: trying to set an invalid {self.checksum_name} checksum")
+            raise ValueError(f"{self.__class__.__name__}: trying to set an invalid {self.checksum_name} checksum")
 
     def __repr__(self):
         return f"(path='{self.path or ''}', checksum='{self.checksum or ''}', size={self.size or ''})"
@@ -653,7 +655,7 @@ class CRC32DataValidationFile(DataValidationFile, SessionFile):
         SessionFile.__init__(self, path)
         DataValidationFile.__init__(self, path=path, checksum=checksum, size=size)
         # except AttributeError:
-        #     print(f"{self.__class__}: no session dir in path")
+        #     print(f"{self.__class__.__name__}: no session dir in path")
         #     clear(self)
         #     return
 
@@ -794,7 +796,8 @@ class MongoDataValidationDB(DataValidationDB):
             file = cls.DVFile(path=path, size=size, checksum=checksum)
 
         # check an identical entry doesn't exist already
-        _, match_type = cls.get_matches(file)
+        matches = cls.get_matches(file)
+        match_type = [(file == match) for match in matches]
         if (cls.DVFile.Match.SELF in match_type) \
             or (cls.DVFile.Match.SELF_NO_CHECKSUM in match_type):
             print(f'skipped {file.session.folder}/{file.name} in Mongo database')
@@ -807,7 +810,7 @@ class MongoDataValidationDB(DataValidationDB):
             "size": file.size,
             "type": file.checksum_name,
         })
-        print(f'added {file.session.folder}/{file.name} to Mongo database')
+        logging.info(f'added {file.session.folder}/{file.name} to Mongo database')
 
     @classmethod
     def get_matches(cls,
@@ -1080,7 +1083,7 @@ class DataValidationFolder:
             is_file = os.path.isfile(path)
 
         if is_file:
-            raise ValueError(f"{self.__class__}: path must point to a folder {path}")
+            raise ValueError(f"{self.__class__.__name__}: path must point to a folder {path}")
         else:
             self.path = pathlib.Path(path).as_posix()
         
@@ -1103,7 +1106,7 @@ class DataValidationFolder:
         elif path and isinstance(path, List): # inequality checks for str type and existence
             pass
         else:
-            raise TypeError(f"{self.__class__}: path must be a string or list of strings")
+            raise TypeError(f"{self.__class__.__name__}: path must be a string or list of strings")
             # add to list of backup locations as a Folder type object of the same class
         for p in path:
             if str(p) != '':
@@ -1137,37 +1140,29 @@ class DataValidationFolder:
             try:
                 file = self.db.DVFile(path=path.as_posix())
             except (ValueError, TypeError):
-                logging.info(f"{self.__class__}: could not add to database, likely missing session ID: {path.as_posix()}")
+                logging.info(f"{self.__class__.__name__}: could not add to database, likely missing session ID: {path.as_posix()}")
                 continue
             
             if file.size < self.upper_size_limit or self.generate_large_checksums:
                 strategies.generate_checksum_if_not_in_db(file, self.db)
         
         
-    def clear(self):
+    def clear(self) -> List[int]:
         """Clear the folder of files which are backed-up on LIMS or np-exp, or any added backup paths""" 
-        if not self.backup_paths:
-            logging.warning(
-                f"{self.__class__}: no backup locations specified - use 'folder.add_backup(path)' to add one or more backup locations"
-            )
-            return 
-        
+    
         deleted_bytes = [] # keep a tally of space recovered
-        for path in self.file_paths:
+        for path in progressbar(self.file_paths, units='files'):
             try:
                 file = self.db.DVFile(path=path.as_posix())
             except (ValueError, TypeError):
-                logging.info(f"{self.__class__}: could not add to database, likely missing session ID: {path.as_posix()}")
+                logging.info(f"{self.__class__.__name__}: could not add to database, likely missing session ID: {path.as_posix()}")
                 continue
             
-            # backups = strategies.find_valid_backups(file, self.db, self.backup_paths)
-            # if backups:
-                # logging.info(f"{self.__class__}: DELETING {file.path}")
-            # TODO: second call to query db below - can consolidate into one call
             deleted_bytes.append(strategies.delete_if_valid_backup_in_db(file, self.db))
-            
-        print(f"{len(deleted_bytes)} files deleted from: {self.path}\n\t{sum(deleted_bytes) / 1024**3 :.1f} GB recovered")
-    
+        
+        deleted_bytes = [d for d in deleted_bytes if d != 0]    
+        print(f"{self.path}\n{len(deleted_bytes)} files deleted \t|\t{sum(deleted_bytes) / 1024**3 :.1f} GB recovered")
+        return deleted_bytes
     
     def validate_backups(self,
                          verbose: bool = True,
@@ -1177,12 +1172,12 @@ class DataValidationFolder:
         """go through each file in the current folder (self) and look for valid copies in the backup folders"""
         if not self.backup_paths:
             print(
-                f"{self.__class__}: no backup locations specified - use 'folder.add_backup(path)' to add one or more backup locations"
+                f"{self.__class__.__name__}: no backup locations specified - use 'folder.add_backup(path)' to add one or more backup locations"
             )
             return
         
         if not self.accessible:
-            print(f"{self.__class__}: folder not accessible")
+            print(f"{self.__class__.__name__}: folder not accessible")
             # TODO implement standard file list for comparison without accessbile folder
             return
 
@@ -1194,7 +1189,7 @@ class DataValidationFolder:
                 try:
                     file = self.db.DVFile(path=os.path.join(root, f))
                 except [ValueError, TypeError]:
-                    print(f"{self.__class__}: invalid file, not added to database: {f}")
+                    logging.info(f"{self.__class__.__name__}: invalid file, not added to database: {f}")
                     continue
 
                 # generate new checksums for large files if toggled on
@@ -1223,7 +1218,7 @@ class DataValidationFolder:
                     if not all(owc.checksum == others_with_checksum[-1].checksum \
                         for owc in others_with_checksum):
                         logging.warning(
-                            f"{self.__class__}: Skipped: {file.path} multiple db entries with different checksums")
+                            f"{self.__class__.__name__}: Skipped: {file.path} multiple db entries with different checksums")
                         continue
                     else:
                         file = others_with_checksum[-1]
@@ -1237,7 +1232,7 @@ class DataValidationFolder:
                     self.db.add_file(file)
 
                 elif not file.checksum:
-                    print(f"{self.__class__}: {file.path} large file, not validated")
+                    print(f"{self.__class__.__name__}: {file.path} large file, not validated")
                     continue
 
                 # check again in current database for similar files
@@ -1451,13 +1446,22 @@ def report(file: DataValidationFile, comparisons: List[DataValidationFile]):
     logging.info("\n")
     logging.info("#" * column_width)
 
-
+def clear_dir(dir):
+    deleted_bytes = [] # keep a tally of space recovered
+    for f in [child for child in pathlib.Path(dir).iterdir() if child.is_dir()]:
+        F = DataValidationFolder(f.as_posix())
+        F.add_to_db()
+        deleted_bytes.append(F.clear())
+    print(f"Finished clearing {dir}.\n{len(deleted_bytes)} files deleted \t|\t {sum(deleted_bytes) / 1024**3 :.1f} GB recovered")
+        
 def main():
-    x = CRC32DataValidationFile(path=R'\\allen\programs\mindscope\workgroups\np-exp\1190290940_611166_20220708\1190258206_611166_20220708_surface-image1-left.png')
-    print(x.checksum)
-    m = R"\\w10dtsm112722\C\ProgramData\AIBS_MPE\mvr\data\1175087162_612802_20220504"
-    f = DataValidationFolder(m)
-    f.clear()
+    # x = CRC32DataValidationFile(path=R'\\allen\programs\mindscope\workgroups\np-exp\1190290940_611166_20220708\1190258206_611166_20220708_surface-image1-left.png')
+    # print(x.checksum)
+    clear_dir(R"\\w10dtsm112722\C\ProgramData\AIBS_MPE\mvr\data")
+    # f = R"\\w10dtsm112722\C\ProgramData\AIBS_MPE\mvr\data\1195689894_631510_20220801"
+    # F = DataValidationFolder(f)
+    # F.add_to_db()
+    # F.clear()
     
 if __name__ == "__main__":
     main()

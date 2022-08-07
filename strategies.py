@@ -1,6 +1,7 @@
 """Strategies for looking up DataValidationFiles in a database and performing some action depending on context."""
 
 from __future__ import annotations
+import os
 
 import pathlib
 from typing import TYPE_CHECKING, List, Union
@@ -13,7 +14,6 @@ def new_file_with_checksum(subject: dv.DataValidationFile) -> dv.DataValidationF
     """
     Get a new file to avoid modifying the original.
     """
-    checksum = subject.generate_checksum(subject.path, subject.size)
     return dv.DataValidationFile(path=subject.path, size=subject.size, checksum=checksum)
 
 
@@ -21,7 +21,8 @@ def generate_checksum(subject: dv.DataValidationFile, db: dv.DataValidationDB) -
     """
     Generate a checksum for a file and add to database.
     """
-    new_file = new_file_with_checksum(subject)
+    checksum = subject.generate_checksum(subject.path, subject.size)
+    new_file = db.DVFile(path=subject.path, size=subject.size, checksum=checksum)
     db.add_file(new_file)
     return new_file
 
@@ -119,11 +120,15 @@ def find_valid_backups(subject: dv.DataValidationFile, db: dv.DataValidationDB, 
         backup_paths = set()
     else:
         backup_paths = set(backup_paths)
-    backup_paths.add(subject.session.lims_path.as_posix())
-    backup_paths.add(subject.session.npexp_path.as_posix())
-        
-    if not backup_paths:
-        return None
+    if subject.session.lims_path:
+        backup_paths.add(subject.session.lims_path.as_posix())
+    if subject.npexp_path:
+        backup_paths.add(subject.session.npexp_path.as_posix())
+    backup_paths.add('//W10DTSM112719/neuropixels_data/' + subject.session.folder)
+    backup_paths.add('//W10DTSM18306/neuropixels_data/' + subject.session.folder)
+    backup_paths.add('//W10DTSM18307/neuropixels_data/' + subject.session.folder)
+    
+    backup_paths = list(backup_paths)
     
     subject = ensure_checksum(subject, db)
     
@@ -145,9 +150,20 @@ def find_valid_backups(subject: dv.DataValidationFile, db: dv.DataValidationDB, 
     else:
         
         for backup_path in backup_paths:
-            backup = db.DVFile(pathlib.Path(backup_path, subject.relative_path()).as_posix())
-            if backup.accessible:
-                backups.add(generate_checksum(backup, db))
+            try: 
+                dir_contents = os.scandir(backup_path)
+            except FileNotFoundError:
+                continue
+            
+            for d in dir_contents:
+                if d.is_file() \
+                and d.stat().st_size == subject.size:
+                    
+                    candidate = generate_checksum(db.DVFile(path=d.path, size=subject.size), db)
+                    if (subject == candidate) in [db.DVFile.Match.VALID_COPY_RENAMED, db.DVFile.Match.VALID_COPY_SAME_NAME]:
+                        backups.add(candidate)
+                        # could break here instead of checking all backup paths
+                        # but why not get as much info as possible before deleting the file
     
     return list(backups) or None
     
