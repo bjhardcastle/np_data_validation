@@ -494,7 +494,7 @@ class DataValidationFile(abc.ABC):
                     probe_name = chr(ord('A') + int(probe_name))
                 assert ord('A') <= ord(probe_name) <= ord('F'), logging.ERROR("{} is not a valid probe name: must include a single digit [0-5], or some combination of capital letters [A-F]".format(probe_name))
             else:
-                assert all(letter in ["ABCDEF"] for letter in probe_name), logging.ERROR("{} is not a valid probe name: must include a single digit [0-5], or some combination of capital letters [A-F]".format(probe_name))
+                assert all(letter in "ABCDEF" for letter in probe_name), logging.ERROR("{} is not a valid probe name: must include a single digit [0-5], or some combination of capital letters [A-F]".format(probe_name))
         self.probe_dir = probe_name if probe else None
         
         if path and not size and self.accessible: # TODO replace exists check, race condition

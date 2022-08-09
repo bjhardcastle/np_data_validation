@@ -27,7 +27,6 @@ while not RIG_ID:
         RIG_ID = "BTVTest.1"
         break
     
-else:
     RIG_ID = "none"
     print("Not running from an NP rig: connections to services won't be made\nTry setting env var USE_TEST_RIG=1")
 
