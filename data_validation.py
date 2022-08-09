@@ -1157,7 +1157,7 @@ class DataValidationFolder:
             
             running_on_rig = nptk.COMP_ID if "NP." in nptk.COMP_ID else None
             local_folder = self.path[0] not in ["/", "\\"]
-            rig_from_path = nptk.rig_from_path(self.path) 
+            rig_from_path = nptk.Rig.rig_from_path(self.path) 
             
             # get the sync computer's path 
             if (running_on_rig and local_folder):

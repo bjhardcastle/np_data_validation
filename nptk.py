@@ -27,8 +27,8 @@ while not RIG_ID:
         RIG_ID = "BTVTest.1"
         break
     
-    RIG_ID = "none"
 else:
+    RIG_ID = "none"
     print("Not running from an NP rig: connections to services won't be made\nTry setting env var USE_TEST_RIG=1")
 
 print(f"Running from {COMP_ID}, connected to {RIG_ID}")
@@ -174,8 +174,3 @@ class ConfigHTTP:
             if any([sub in k for sub in np_idx]) and any([s in k.lower() for s in comp]):
                 a[k] = v['hostname'].upper()
         return a
-
-bool(Rig)
-zero = Rig.all_comps(0)
-path = "W10DT05515"
-Rig.rig_from_path(path)
