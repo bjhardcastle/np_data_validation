@@ -1310,8 +1310,10 @@ def clear_dirs():
     if os.getenv('AIBS_COMP_ID'):
         comp = os.getenv('AIBS_COMP_ID').split('-')[-1].lower()
         dirs += [d.strip() for d in config[comp]['dirs'].split(',')]
+    while '' in dirs:
+        dirs.remove('')
     
-    if not dirs or dirs == ['']:
+    if not dirs:
         return
     
     include_subfolders = config['options'].getboolean('include_subfolders', fallback=True)
