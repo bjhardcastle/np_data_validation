@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 
 import pathlib
-from typing import TYPE_CHECKING, List, Union
+from typing import TYPE_CHECKING, List, Set, Union
 
 # if TYPE_CHECKING:
 import data_validation as dv
@@ -92,14 +92,14 @@ def exchange_if_checksum_in_db(subject: dv.DataValidationFile, db: dv.DataValida
         return subject
 
 
-def delete_if_valid_backup_in_db(subject: dv.DataValidationFile, db: dv.DataValidationDB) -> int:
+def delete_if_valid_backup_in_db(subject: dv.DataValidationFile, db: dv.DataValidationDB, backup_paths: Union[List[str],Set[str]]=None) -> int:
     """
     If the database has an entry for the subject file in known backup locations, or a new specified location, we can
     delete the subject. 
     This is just a safety measure to prevent calling 'find_valid_backups' and deleting the returned list of backups!
     """               
     subject = ensure_checksum(subject, db)
-    backups = find_valid_backups(subject, db)
+    backups = find_valid_backups(subject, db, backup_paths)
     if backups:
         dv.report(subject, backups)
         # a final check before deleting (all items in 'backups' should be valid copies):
@@ -118,21 +118,30 @@ def delete_if_valid_backup_in_db(subject: dv.DataValidationFile, db: dv.DataVali
     return 0
 
 
-def find_valid_backups(subject: dv.DataValidationFile, db: dv.DataValidationDB, backup_paths: Union[List[str], List[pathlib.Path]] = None) -> List[dv.DataValidationFile]:
+def find_valid_backups(subject: dv.DataValidationFile, db: dv.DataValidationDB, backup_paths: Union[List[str], Set[str], List[pathlib.Path]] = None) -> List[dv.DataValidationFile]:
     if not backup_paths:
         backup_paths = set()
+        if subject.session.lims_path and subject.session.lims_path.as_posix() not in subject.path:
+            backup_paths.add(subject.session.lims_path.as_posix())
+        if subject.npexp_path and subject.session.npexp_path.as_posix() not in subject.path:
+            backup_paths.add(subject.session.npexp_path.as_posix())
+        if not backup_paths:
+            backup_paths.add('//W10DTSM112719/neuropixels_data/' + subject.session.folder)
+            backup_paths.add('//W10DTSM18306/neuropixels_data/' + subject.session.folder)
+            backup_paths.add('//W10DTSM18307/neuropixels_data/' + subject.session.folder)
+            
+    # TODO fix order here so lims folder is first, npexp second: converting to list seems to reorder
     else:
         backup_paths = set(backup_paths)
-    if subject.session.lims_path:
-        backup_paths.add(subject.session.lims_path.as_posix())
-    if subject.npexp_path:
-        backup_paths.add(subject.session.npexp_path.as_posix())
-    backup_paths.add('//W10DTSM112719/neuropixels_data/' + subject.session.folder)
-    backup_paths.add('//W10DTSM18306/neuropixels_data/' + subject.session.folder)
-    backup_paths.add('//W10DTSM18307/neuropixels_data/' + subject.session.folder)
+    backup_paths = list(backup_paths) if not isinstance(backup_paths, list) else backup_paths
     
-    # TODO fix order here so lims folder is first, npexp second: converting to list seems to reorder
-    backup_paths = list(backup_paths)
+    backups = []
+    for backup_path in backup_paths:
+        backup = db.get_file(path=backup_path)
+        if backup:
+            backups.append(backup)
+    
+    return backups
     
     subject = ensure_checksum(subject, db)
     

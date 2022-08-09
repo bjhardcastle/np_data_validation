@@ -1093,18 +1093,24 @@ class DataValidationFolder:
         
         if self.session:
             # get the lims folder for this session and add it to the backup paths
-            self.lims_path = self.session.lims_path
-            if self.lims_path:
-                self.add_backup_path(self.lims_path)
+            self.lims_path = self.session.lims_path # must exist if not None
+            if self.lims_path and self.lims_path.as_posix() not in self.path:
+                self.add_backup_path(self.lims_path.as_posix())
             
             # get the npexp folder for this session and add it to the backup paths (if it exists)
             self.npexp_path = self.session.npexp_path
-            if self.npexp_path and os.path.exists(self.npexp_path):
-                self.add_backup_path(self.npexp_path)
-    
+            if self.npexp_path and os.path.exists(self.npexp_path) and Session.NPEXP_ROOT not in self.path:
+                self.add_backup_path(self.npexp_path.as_posix())
+                
+            if not self.backup_paths:
+                # TODO add only the relevant backup paths for this rig (detect from Rig or path)
+                self.add_backup_path('//W10DTSM112719/neuropixels_data/' + self.session.folder) # np.0
+                self.add_backup_path('//W10DTSM18306/neuropixels_data/' + self.session.folder) # np.1
+                self.add_backup_path('//W10DTSM18307/neuropixels_data/' + self.session.folder) # np.2
+            
             
     def add_backup_path(self, path: Union[str, List[str]]):
-        """Store one or more paths to folders containing backups for the session"""
+        """Store one or more paths to folders possibly containing backups for the session"""
         if path and (isinstance(path, str) or isinstance(path, pathlib.Path)):
             path = [str(path)]
         elif path and isinstance(path, List): # inequality checks for str type and existence
@@ -1133,9 +1139,6 @@ class DataValidationFolder:
     def add_to_db(self):
         "Add all files in folder to database if they don't already exist"
         
-        def generate_checksum_if_not_in_db(file_inst, db):
-            strategies.generate_checksum_if_not_in_db(file_inst, db)
-            
         # create threads for each file to be added
         threads = []
         for path in progressbar(self.file_paths, prefix=' ', units='files', size=25):
@@ -1146,14 +1149,10 @@ class DataValidationFolder:
                 continue
             
             if file.size <= self.regenerate_threshold_bytes:
-                # TODO add new strategy to generate only: not exchange with existing db checksum
-                t = threading.Thread(target=generate_checksum_if_not_in_db, args=(file,self.db))
-            elif file.size > self.regenerate_threshold_bytes:
-                t = threading.Thread(target=generate_checksum_if_not_in_db, args=(file,self.db))
+                t = threading.Thread(target=strategies.generate_checksum, args=(file,self.db))
             else:
-                # TODO move below to new strategy
-                logging.info(f"{self.__class__.__name__}: file {path.as_posix()} is larger than {self.regenerate_threshold_bytes} bytes, skipping checksum generation")
-                continue 
+                t = threading.Thread(target=strategies.generate_checksum_if_not_in_db, args=(file,self.db))
+
             threads.append(t)
             t.start() 
             
@@ -1166,8 +1165,8 @@ class DataValidationFolder:
     def clear(self) -> List[int]:
         """Clear the folder of files which are backed-up on LIMS or np-exp, or any added backup paths""" 
     
-        def delete_if_valid_backup_in_db(result, idx, file_inst, db):
-            files_bytes = strategies.delete_if_valid_backup_in_db(file_inst, db)
+        def delete_if_valid_backup_in_db(result, idx, file_inst, db, backup_paths):
+            files_bytes = strategies.delete_if_valid_backup_in_db(file_inst, db, backup_paths)
             result[idx] = files_bytes
              
         print("- checking for backups...")
@@ -1182,7 +1181,7 @@ class DataValidationFolder:
                 logging.info(f"{self.__class__.__name__}: could not add to database, likely missing session ID: {path.as_posix()}")
                 continue
             
-            threads[i] = threading.Thread(target=delete_if_valid_backup_in_db, args=(deleted_bytes, i, file, self.db))
+            threads[i] = threading.Thread(target=delete_if_valid_backup_in_db, args=(deleted_bytes, i, file, self.db, self.backup_paths))
             threads[i].start()
             
         for thread in progressbar(threads, prefix=' ', units='files', size=25):
