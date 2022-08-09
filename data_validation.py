@@ -108,6 +108,7 @@ import logging.handlers
 import mmap
 import os
 import pathlib
+import pprint
 import random
 import re
 import shelve
@@ -1368,11 +1369,13 @@ def DVFolders_from_dirs(dirs: Union[str, List[str]]) -> Generator[DataValidation
     for dir in dirs:
         dir_path = pathlib.Path(dir)
         if Session.folder(dir):
+            # the dir provided is a session folder: make this into a DVFolder
             if skip(dir_path):
                 continue
             else:
                 yield DataValidationFolder(dir_path.as_posix())
         else:
+            # the dir provided might be a repository of session folders: check its subfolders and return as DVFolders if so 
             for c in [child for child in dir_path.iterdir() if child.is_dir()]:
                 if skip(c):
                     continue
@@ -1398,9 +1401,10 @@ def clear_dirs():
     regenerate_threshold_bytes = config['options'].getint('regenerate_threshold_bytes', fallback=1024**2)
     
     total_deleted_bytes = [] # keep a tally of space recovered
-    
+    print('Checking:')
+    pprint.pprint(dirs[:], indent=4, compact=True)
     for F in DVFolders_from_dirs(dirs):
-        
+  
         F.include_subfolders = include_subfolders
         F.regenerate_threshold_bytes = regenerate_threshold_bytes
         
