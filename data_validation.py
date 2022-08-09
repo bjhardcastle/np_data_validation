@@ -450,7 +450,6 @@ class DataValidationFile(abc.ABC):
     # a function that accepts a string and confirms it conforms to the checksum
     # format, return True or False
 
-    # @abc.abstractmethod
     def __init__(self, path: str = None, checksum: str = None, size: int = None):
         """ setup depending on the inputs """
 
@@ -488,10 +487,14 @@ class DataValidationFile(abc.ABC):
         probe = re.search(R"(?<=_probe)_?(([A-F]+)|([0-5]{1}))", self.path.split(self.name)[0])
         if probe:
             probe_name = probe[0]
-            # convert probe numbers to letters 
-            if ord('0') <= ord(probe_name) <= ord('5'):
-                probe_name = chr(ord('A') + int(probe_name))
-            assert ord('A') <= ord(probe_name) <= ord('F')
+            # only possibile probe_names here are [A-F](any combination), [0-5](single digit) 
+            if len(probe_name) == 1:
+                # convert single-digit probe numbers to letters 
+                if ord('0') <= ord(probe_name) <= ord('5'):
+                    probe_name = chr(ord('A') + int(probe_name))
+                assert ord('A') <= ord(probe_name) <= ord('F'), logging.ERROR("{} is not a valid probe name: must include a single digit [0-5], or some combination of capital letters [A-F]".format(probe_name))
+            else:
+                assert all(letter in ["ABCDEF"] for letter in probe_name), logging.ERROR("{} is not a valid probe name: must include a single digit [0-5], or some combination of capital letters [A-F]".format(probe_name))
         self.probe_dir = probe_name if probe else None
         
         if path and not size and self.accessible: # TODO replace exists check, race condition
@@ -516,9 +519,6 @@ class DataValidationFile(abc.ABC):
     def generate_checksum(cls, path, size=None) -> str:
         cls.checksum_test(cls.checksum_generator)
         return cls.checksum_generator(path, size)
-    # def generate_checksum(self) -> str:
-    #     self.checksum_test(functools.partialmethod(self.checksum_generator(), self.path))
-    #     return self.checksum_generator()
 
     @property
     def checksum(self) -> str:
@@ -1132,13 +1132,16 @@ class DataValidationFolder:
 
     def add_standard_backup_paths(self):
         """ 
-        Add LIMS, NP-EXP, or neuropixels_data folder, according to availability.
+        Add LIMS, NP-EXP, or neuropixels_data folder, depending on availability.
         
         Priority is LIMS folder - if valid backups are on LIMS, we don't really care about other locations. Next most
         important is NP-EXP, so we add these two by default. If neither of these locations have been made yet, we're likely
         dealing with data that's still on a rig computer prior to any uploads - the local backup path would be
-        sync/neuropixels_data for all files except those from open ephys.
+        sync/neuropixels_data for all files except those from open ephys. 
         #TODO add open ephys backup drives/paths... 
+        
+        We just need to ensure that potential backup path isn't the folder we're trying to validate - ie. itself, which
+        is not a backup.
         """
         # get the lims folder for this session and add it to the backup paths
         self.lims_path = self.session.lims_path # must exist if not None
@@ -1168,7 +1171,7 @@ class DataValidationFolder:
             else:
                 sync_path = None
                 
-            if sync_path:
+            if sync_path and sync_path not in self.path:
                 # add the neuropix data folder for this rig
                 self.add_backup_path(   
                     pathlib.Path(
