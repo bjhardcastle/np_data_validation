@@ -1141,7 +1141,7 @@ class DataValidationFolder:
         
         # create threads for each file to be added
         threads = []
-        for path in progressbar(self.file_paths, prefix=' ', units='files', size=25):
+        for path in self.file_paths:
             try:
                 file = self.db.DVFile(path=path.as_posix())
             except (ValueError, TypeError):
@@ -1353,7 +1353,7 @@ def clear_dirs():
         F.include_subfolders = include_subfolders
         F.regenerate_threshold_bytes = regenerate_threshold_bytes
         
-        print('=' * 25)
+        print('=' * 40)
         print(f'Clearing {F.path}')
         
         F.add_to_db()
@@ -1361,7 +1361,7 @@ def clear_dirs():
         deleted_bytes = F.clear()
         total_deleted_bytes += deleted_bytes 
         
-        print('=' * 25)
+        print('=' * 40)
         
     print(f"Finished clearing.\n{len(total_deleted_bytes)} files deleted \t|\t {sum(total_deleted_bytes) / 1024**3 :.1f} GB recovered")
     
