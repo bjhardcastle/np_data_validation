@@ -429,6 +429,9 @@ class DataValidationFile(abc.ABC):
         Call <superclass>.__init__(path, checksum, size) in subclass __init__  
         
     """
+    #TODO hash refers to path, size, checksum: add setters that freeze these attributes and set only during init
+    # as a result it won't be possible to add checksums - a new instance will have to be created with the checksum 
+    
     # DB: DataValidationDB = NotImplemented
 
     checksum_threshold: int = 50 * 1024**2
@@ -1229,7 +1232,7 @@ class DataValidationFolder:
             files_bytes = strategies.delete_if_valid_backup_in_db(file_inst, db, backup_paths)
             result[idx] = files_bytes
              
-        print("- checking for backups...")
+        print("- validating backups...")
         deleted_bytes = [0]*len(self.file_paths) # keep a tally of space recovered
         threads = [None]*len(self.file_paths) # following https://stackoverflow.com/a/6894023
         # for path in progressbar(self.file_paths, prefix=' ', units='files', size=25):
