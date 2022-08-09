@@ -1225,21 +1225,16 @@ class DataValidationFolder:
         for thread in progressbar(threads, prefix=' ', units='files', size=25):
             thread.join()
         
-        # tidy up folder if it's now empty:
-        for f in pathlib.Path(self.path).rglob('*'):
-            # to save finding the total size of the directory, just break on the first file found
-            if f.is_file() and f.stat().st_size > 0:
-                break
-        else:
-            #? could just run this directly to clear all empty subfolders
-            logging.info(f"{self.__class__.__name__}: removing empty folder {self.path}")
-            check_dir_paths = os.walk(self.path, topdown=False, onerror=lambda: None, followlinks=False)
-            for check_dir in check_dir_paths:
-                try:
-                    os.rmdir(check_dir[0])
-                except OSError:
-                    continue
+        # tidy up empty subfolders if it's now empty:
+        check_dir_paths = os.walk(self.path, topdown=False, onerror=lambda: None, followlinks=False)
+        for check_dir in check_dir_paths:
+            try:
+                os.rmdir(check_dir[0]) # raises error if not empty
+                logging.debug(f"{self.__class__.__name__}: removed empty folder {check_dir[0]}")
+            except OSError:
+                continue
         
+        # return cumulative sum of bytes deleted from folder
         deleted_bytes = [d for d in deleted_bytes if d != 0]
         print(f"{len(deleted_bytes)} files deleted \t|\t{sum(deleted_bytes) / 1024**3 :.1f} GB recovered")
         return deleted_bytes
