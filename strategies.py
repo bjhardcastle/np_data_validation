@@ -53,7 +53,7 @@ def find_invalid_copies_in_db(subject: dv.DataValidationFile, db: dv.DataValidat
     Check for invalid copies of the subject file in database.
     """
     matches = db.get_matches(subject)
-    match_type = [(subject == match) for match in matches]
+    match_type = [(subject == match) for match in matches] if matches else []
     return [
         m for i,m in enumerate(matches) 
         if match_type[i] >= subject.Match.CHECKSUM_COLLISION 

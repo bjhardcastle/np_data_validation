@@ -796,7 +796,7 @@ class MongoDataValidationDB(DataValidationDB):
 
         # check an identical entry doesn't exist already
         matches = cls.get_matches(file)
-        match_type = [(file == match) for match in matches]
+        match_type = [(file == match) for match in matches] if matches else []
         if (cls.DVFile.Match.SELF in match_type) \
             or (cls.DVFile.Match.SELF_NO_CHECKSUM in match_type):
             print(f'skipped {file.session.folder}/{file.name} in Mongo database')
