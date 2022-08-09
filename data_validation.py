@@ -1054,9 +1054,11 @@ class DataValidationFolder:
     db: Type[DataValidationDB] = MongoDataValidationDB
     backup_paths: Set[str] = set() # auto-populated with lims, npexp, sync computer folders
     include_subfolders: bool = True
-    upper_size_limit = 1024**4 * 1 # TB - files above this won't have checksums generated
-    regenerate_checksums: bool = False # instead of consulting the database
-    # TODO implement check for regeneration before exchanging
+    regenerate_threshold_bytes = 1024**2 * 1 # MB 
+    # - below this file size, checksums will always be generated - even if they're already in the database
+    # - above this size, behavior is to get the checksum from the database if it exists for the file (size + path must
+    #   be identical), otherwise generate it
+    
     def __init__(self, path: str):
         """Represents a folder for which we want to checksum the contents and add to database,
         possibly deleting if a valid copy exists elswhere
@@ -1132,10 +1134,11 @@ class DataValidationFolder:
                 logging.info(f"{self.__class__.__name__}: could not add to database, likely missing session ID: {path.as_posix()}")
                 continue
             
-            if file.size < self.upper_size_limit:
+            if file.size < self.regenerate_threshold_bytes:
                 strategies.generate_checksum_if_not_in_db(file, self.db)
             else:
                 logging.info(f"{self.__class__.__name__}: file {path.as_posix()} is larger than {self.upper_size_limit} bytes, skipping checksum generation")
+        
         
     def clear(self) -> List[int]:
         """Clear the folder of files which are backed-up on LIMS or np-exp, or any added backup paths""" 
@@ -1150,7 +1153,6 @@ class DataValidationFolder:
             
             files_bytes = strategies.delete_if_valid_backup_in_db(file, self.db)
             if files_bytes:
-                # deleted_bytes += [files for files in files_bytes if files != 0]
                 deleted_bytes += [files_bytes] if files_bytes != 0 else []
         
         # tidy up folder if it's now empty:
@@ -1304,20 +1306,29 @@ def clear_dirs():
         comp = os.getenv('AIBS_COMP_ID').split('-')[-1].lower()
         dirs += [d.strip() for d in config[comp]['dirs'].split(',')]
     
-    if not dirs:
+    if not dirs or dirs == ['']:
         return
     
     include_subfolders = config['options'].getboolean('include_subfolders', fallback=True)
-    regenerate_checksums = config['options'].getboolean('regenerate_existing_checksums', fallback=False)
+    regenerate_threshold_bytes = config['options'].getint('regenerate_threshold_bytes', fallback=1024**2)
     
     total_deleted_bytes = [] # keep a tally of space recovered
+    
     for F in DVFolders_from_dirs(dirs):
+        
+        F.include_subfolders = include_subfolders
+        F.regenerate_threshold_bytes = regenerate_threshold_bytes
+        
         print('=' * 80)
         print(f'Clearing {F.path}')
+        
         F.add_to_db()
-        deleted_bytes = F.clear(include_subfolders=include_subfolders, regenerate_checksums=regenerate_checksums)
+        
+        deleted_bytes = F.clear()
         total_deleted_bytes += deleted_bytes 
+        
         print('=' * 80)
+        
     print(f"Finished clearing.\n{len(total_deleted_bytes)} files deleted \t|\t {sum(total_deleted_bytes) / 1024**3 :.1f} GB recovered")
     
     
