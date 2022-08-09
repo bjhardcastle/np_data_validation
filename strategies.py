@@ -135,14 +135,6 @@ def find_valid_backups(subject: dv.DataValidationFile, db: dv.DataValidationDB, 
         backup_paths = set(backup_paths)
     backup_paths = list(backup_paths) if not isinstance(backup_paths, list) else backup_paths
     
-    backups = []
-    for backup_path in backup_paths:
-        backup = db.get_file(path=backup_path)
-        if backup:
-            backups.append(backup)
-    
-    return backups
-    
     subject = ensure_checksum(subject, db)
     
     invalid_backups = find_invalid_copies_in_db(subject, db)
