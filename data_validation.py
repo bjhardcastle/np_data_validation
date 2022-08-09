@@ -480,7 +480,19 @@ class DataValidationFile(abc.ABC):
             self.path = '/' + self.path
             
         self.name = os.path.basename(self.path)
-
+        
+        # if a file lives in a probe folder (_probeA, or _probeABC) it may have the same name, size (and even checksum) as
+        # another file in a corresponding folder (_probeB, or _probeDEF) - the data are identical if all the above
+        # match, but it would still be preferable to keep track of these files separately -> this property indicates 
+        probe = re.search(R"(?<=_probe)_?(([A-F]+)|([0-5]{1}))", self.path.split(self.name)[0])
+        if probe:
+            probe_name = probe[0]
+            # convert probe numbers to letters 
+            if ord('0') <= ord(probe_name) <= ord('5'):
+                probe_name = chr(ord('A') + int(probe_name))
+            assert ord('A') <= ord(probe_name) <= ord('F')
+        self.probe_dir = probe_name if probe else None
+        
         if path and not size and self.accessible: # TODO replace exists check, race condition
             self.size = os.path.getsize(path)
         elif size and isinstance(size, int):
@@ -512,7 +524,7 @@ class DataValidationFile(abc.ABC):
         if not hasattr(self, '_checksum'):
             return None
         return self._checksum
-
+    
     @checksum.setter
     def checksum(self, value: str):
         if self.__class__.checksum_validate(value):
@@ -586,6 +598,7 @@ class DataValidationFile(abc.ABC):
             and (self.size == other.size) \
             and (self.name.lower() == other.name.lower()) \
             and (self.path.lower() != other.path.lower()) \
+            and (self.probe_dir == other.probe_dir) \
             : # valid copy, not self
             return self.__class__.Match.VALID_COPY_SAME_NAME.value
 
@@ -594,21 +607,25 @@ class DataValidationFile(abc.ABC):
             and (self.size == other.size) \
             and (self.name.lower() != other.name.lower()) \
             and (self.path.lower() != other.path.lower()) \
+            and (self.probe_dir == other.probe_dir) \
             : # valid copy, different name
             return self.__class__.Match.VALID_COPY_RENAMED.value
 
         elif self.checksum and other.checksum \
             and (self.name.lower() == other.name.lower()) \
             and (self.path.lower() != other.path.lower()) \
+            and (self.probe_dir == other.probe_dir) \
             : # invalid copy ( multiple categories)
 
             if (self.size != other.size) \
                 and (self.checksum != other.checksum) \
+                and (self.probe_dir == other.probe_dir) \
                 : # out-of-sync copy or incorrect data named as copy
                 return self.__class__.Match.UNSYNCED_DATA.value
 
             if (self.size != other.size) \
                 and (self.checksum == other.checksum) \
+                and (self.probe_dir == other.probe_dir) \
                 : # out-of-sync copy or incorrect data named as copy
                 # plus checksum which needs updating
                 # (different size with same checksum isn't possible)
@@ -616,6 +633,7 @@ class DataValidationFile(abc.ABC):
 
             if (self.size == other.size) \
                 and (self.checksum != other.checksum) \
+                and (self.probe_dir == other.probe_dir) \
                 : # possible data corruption, or checksum needs updating
                 return self.__class__.Match.UNSYNCED_OR_CORRUPT_DATA.value
 
