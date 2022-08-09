@@ -108,7 +108,6 @@ import logging.handlers
 import mmap
 import os
 import pathlib
-from pydoc import doc
 import random
 import re
 import shelve
@@ -118,6 +117,7 @@ import threading
 import time
 import traceback
 import zlib
+from pydoc import doc
 from typing import (Any, Callable, Dict, Generator, List, Optional, Set, Tuple,
                     Type, Union)
 
@@ -127,8 +127,9 @@ except ImportError:
     print("pymongo not installed")
     
 import data_getters as dg  # from corbett's QC repo
+import nptk  # utilities for np rigs and data
 import strategies  # for interacting with database
-import timing
+import timing  # nice utility that prints total execution time on exit
 
 # LOG_DIR = fR"//allen/programs/mindscope/workgroups/np-exp/ben/data_validation/logs/"
 logging.basicConfig(format="%(asctime)s %(levelname)s %(message)s", filename="data_validation.log", level=logging.DEBUG,datefmt="%Y-%m-%d %H:%M")
@@ -295,7 +296,7 @@ class Session:
     @property
     def lims_path(self) -> Union[pathlib.Path, None]:
         '''get lims id from path/str and lookup the corresponding directory in lims'''
-        if not self.folder or self.id:
+        if not (self.folder or self.id):
             return None
         
         try:
@@ -1092,22 +1093,10 @@ class DataValidationFolder:
             self.path = pathlib.Path(path).as_posix()
         
         if self.session:
-            # get the lims folder for this session and add it to the backup paths
-            self.lims_path = self.session.lims_path # must exist if not None
-            if self.lims_path and self.lims_path.as_posix() not in self.path:
-                self.add_backup_path(self.lims_path.as_posix())
+            self.add_standard_backup_paths()
             
-            # get the npexp folder for this session and add it to the backup paths (if it exists)
-            self.npexp_path = self.session.npexp_path
-            if self.npexp_path and os.path.exists(self.npexp_path) and Session.NPEXP_ROOT not in self.path:
-                self.add_backup_path(self.npexp_path.as_posix())
+            
                 
-            if not self.backup_paths:
-                # TODO add only the relevant backup paths for this rig (detect from Rig or path)
-                self.add_backup_path('//W10DTSM112719/neuropixels_data/' + self.session.folder) # np.0
-                self.add_backup_path('//W10DTSM18306/neuropixels_data/' + self.session.folder) # np.1
-                self.add_backup_path('//W10DTSM18307/neuropixels_data/' + self.session.folder) # np.2
-            
             
     def add_backup_path(self, path: Union[str, List[str]]):
         """Store one or more paths to folders possibly containing backups for the session"""
@@ -1122,6 +1111,55 @@ class DataValidationFolder:
             if str(p) != '':
                 self.backup_paths.add(str(p))
 
+    def add_standard_backup_paths(self):
+        """ 
+        Add LIMS, NP-EXP, or neuropixels_data folder, according to availability.
+        
+        Priority is LIMS folder - if valid backups are on LIMS, we don't really care about other locations. Next most
+        important is NP-EXP, so we add these two by default. If neither of these locations have been made yet, we're likely
+        dealing with data that's still on a rig computer prior to any uploads - the local backup path would be
+        sync/neuropixels_data for all files except those from open ephys.
+        #TODO add open ephys backup drives/paths... 
+        """
+        # get the lims folder for this session and add it to the backup paths
+        self.lims_path = self.session.lims_path # must exist if not None
+        if self.lims_path and self.lims_path.as_posix() not in self.path:
+            self.add_backup_path(self.lims_path.as_posix())
+        
+        # get the npexp folder for this session and add it to the backup paths (if it exists)
+        self.npexp_path = self.session.npexp_path
+        if self.npexp_path and os.path.exists(self.npexp_path) \
+            and Session.NPEXP_ROOT.as_posix() not in self.path:
+            self.add_backup_path(self.npexp_path.as_posix())
+            
+        if not self.backup_paths:
+            # add only the relevant backup path for this rig (if applicable):
+            # currently this is just the neuropix_data folder on the sync computer
+            
+            running_on_rig = nptk.COMP_ID if "NP." in nptk.COMP_ID else None
+            local_folder = self.path[0] not in ["/", "\\"]
+            rig_from_path = nptk.rig_from_path(self.path) 
+            
+            # get the sync computer's path 
+            if (running_on_rig and local_folder):
+                sync_path = nptk.Rig.Sync.path
+            elif rig_from_path:
+                all_comps = nptk.Rig.all_comps() 
+                sync_path = f"{rig_from_path}-Sync"
+            else:
+                sync_path = None
+                
+            if sync_path:
+                # add the neuropix data folder for this rig
+                self.add_backup_path(   
+                    pathlib.Path(
+                        sync_path, 
+                        "neuropixels_data", 
+                        self.session.folder
+                        ).as_posix()
+                    )
+    
+    
     @property
     def file_paths(self) -> List[DataValidationFile]:
         """return a list of files in the folder"""

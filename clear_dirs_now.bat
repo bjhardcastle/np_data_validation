@@ -13,6 +13,7 @@ git pull origin main
 
 CALL conda env create --file environment.yml
 CALL conda activate dv
+CALL pip install -r requirements.txt
 
 CALL python data_validation.py
 cmd \k
