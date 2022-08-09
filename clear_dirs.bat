@@ -5,6 +5,14 @@ git pull origin main
 
 @REM if environment doesn't exist, create it with:
 @REM conda create --file environment.yml
+ECHO off
+title Checking for valid backups and clearing local directories
+
+git checkout main
+git pull origin main
+
+CALL conda env create --file environment.yml
 CALL conda activate dv
 
-python data_validation.py
+CALL python data_validation.py
+cmd \k
