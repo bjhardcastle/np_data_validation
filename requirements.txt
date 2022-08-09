@@ -1,3 +1,2 @@
---extra-index-url http://aibspi:3141/aibs/packages
---extra-index-url "http://pypi.org/simple" 'psycopg2>=2.7.3'
---extra-index-url "http://pypi.org/simple" 'pymongo>=3.0.0'
+psycopg2>=2.7.3 --extra-index-url http://aibspi:3141/aibs/packages
+pymongo>=3.0.0 --extra-index-url http://pypi.org/simple
