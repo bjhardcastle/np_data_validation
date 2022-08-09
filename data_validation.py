@@ -100,6 +100,7 @@ R"""Tools for validating neuropixels data files from ecephys recording sessions.
 """
 
 import abc
+import configparser
 import enum
 import json
 import logging
@@ -1294,28 +1295,32 @@ def DVFolders_from_dirs(dirs: Union[str, List[str]]) -> Generator[DataValidation
                     yield DataValidationFolder(c.as_posix())
 
     
-def clear_dirs(dirs):
+def clear_dirs():
+    
+    config = configparser.ConfigParser()
+    config.read(os.path.join(os.path.dirname(__file__), 'config.ini'))
+    dirs = [d.strip() for d in config['options']['dirs'].split(',')]
+    if os.getenv('AIBS_COMP_ID'):
+        comp = os.getenv('AIBS_COMP_ID').split('-')[-1].lower()
+        dirs += [d.strip() for d in config[comp]['dirs'].split(',')]
+    
+    if not dirs:
+        return
+    
+    include_subfolders = config['options'].getboolean('include_subfolders', fallback=True)
+    regenerate_checksums = config['options'].getboolean('regenerate_existing_checksums', fallback=False)
+    
     total_deleted_bytes = [] # keep a tally of space recovered
     for F in DVFolders_from_dirs(dirs):
         print('=' * 80)
         print(f'Clearing {F.path}')
         F.add_to_db()
-        deleted_bytes = F.clear()
+        deleted_bytes = F.clear(include_subfolders=include_subfolders, regenerate_checksums=regenerate_checksums)
         total_deleted_bytes += deleted_bytes 
         print('=' * 80)
     print(f"Finished clearing.\n{len(total_deleted_bytes)} files deleted \t|\t {sum(total_deleted_bytes) / 1024**3 :.1f} GB recovered")
     
-        
-def main():
-    # x = CRC32DataValidationFile(path=R'\\allen\programs\mindscope\workgroups\np-exp\1190290940_611166_20220708\1190258206_611166_20220708_surface-image1-left.png')
-    # print(x.checksum)
-    # clear_dirs(R"\\w10dtsm112722\C\ProgramData\AIBS_MPE\mvr\data")
-    clear_dirs(["A:/", "B:/"])
-    # f = R"\\w10dtsm112722\C\ProgramData\AIBS_MPE\mvr\data\1195689894_631510_20220801"
-    # F = DataValidationFolder(f)
-    # F.add_to_db()
-    # F.clear()
     
 if __name__ == "__main__":
-    main()
+    clear_dirs()
     
