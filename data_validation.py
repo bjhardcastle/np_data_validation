@@ -108,14 +108,15 @@ import logging.handlers
 import mmap
 import os
 import pathlib
-from pydoc import doc
 import re
 import shelve
 import sys
 import tempfile
 import traceback
 import zlib
-from typing import Any, Callable, Dict, Generator, List, Optional, Set, Tuple, Type, Union
+from pydoc import doc
+from typing import (Any, Callable, Dict, Generator, List, Optional, Set, Tuple,
+                    Type, Union)
 
 try:
     import pymongo
@@ -1134,10 +1135,14 @@ class DataValidationFolder:
                 logging.info(f"{self.__class__.__name__}: could not add to database, likely missing session ID: {path.as_posix()}")
                 continue
             
-            if file.size < self.regenerate_threshold_bytes:
+            if file.size <= self.regenerate_threshold_bytes:
+                # TODO add new strategy to generate only: not exchange with existing db checksum
+                strategies.generate_checksum_if_not_in_db(file, self.db)
+            elif file.size > self.regenerate_threshold_bytes:
                 strategies.generate_checksum_if_not_in_db(file, self.db)
             else:
-                logging.info(f"{self.__class__.__name__}: file {path.as_posix()} is larger than {self.upper_size_limit} bytes, skipping checksum generation")
+                # TODO move below to new strategy
+                logging.info(f"{self.__class__.__name__}: file {path.as_posix()} is larger than {self.regenerate_threshold_bytes} bytes, skipping checksum generation")
         
         
     def clear(self) -> List[int]:
