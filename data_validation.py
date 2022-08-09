@@ -108,13 +108,16 @@ import logging.handlers
 import mmap
 import os
 import pathlib
+from pydoc import doc
+import random
 import re
 import shelve
 import sys
 import tempfile
+import threading
+import time
 import traceback
 import zlib
-from pydoc import doc
 from typing import (Any, Callable, Dict, Generator, List, Optional, Set, Tuple,
                     Type, Union)
 
@@ -195,6 +198,7 @@ def chunk_crc32(file:Any=None, fsize=None) -> str:
 
     return '%08X' % (crc & 0xFFFFFFFF)
 
+
 def mmap_direct(fpath: Union[str, pathlib.Path], fsize=None) -> str:
     """ generate crc32 with for loop to read large files in chunks """
     # print('using standalone ' + inspect.stack()[0][3])
@@ -206,7 +210,7 @@ def mmap_direct(fpath: Union[str, pathlib.Path], fsize=None) -> str:
     return '%08X' % (crc & 0xFFFFFFFF)
 
 def test_crc32_function(func, *args, **kwargs):
-    temp = os.path.join(tempfile.gettempdir(), 'checksum_test')
+    temp = os.path.join(tempfile.gettempdir(), 'checksum_test_' + str(random.randint(0, 1000000)))
     with open(os.path.join(temp), 'wb') as f:
         f.write(b'foo')
     assert func(temp) == "8C736521", "checksum function incorrect"
@@ -799,7 +803,7 @@ class MongoDataValidationDB(DataValidationDB):
         match_type = [(file == match) for match in matches] if matches else []
         if (cls.DVFile.Match.SELF in match_type) \
             or (cls.DVFile.Match.SELF_NO_CHECKSUM in match_type):
-            print(f'skipped {file.session.folder}/{file.name} in Mongo database')
+            # print(f'skipped {file.session.folder}/{file.name} in Mongo database')
             return
 
         cls.db.insert_one({
@@ -1128,7 +1132,13 @@ class DataValidationFolder:
     
     def add_to_db(self):
         "Add all files in folder to database if they don't already exist"
-        for path in progressbar(self.file_paths, prefix='   - adding to database ', units='files', size=20):
+        
+        def generate_checksum_if_not_in_db(file_inst, db):
+            strategies.generate_checksum_if_not_in_db(file_inst, db)
+            
+        # create threads for each file to be added
+        threads = []
+        for path in progressbar(self.file_paths, prefix=' ', units='files', size=25):
             try:
                 file = self.db.DVFile(path=path.as_posix())
             except (ValueError, TypeError):
@@ -1137,28 +1147,46 @@ class DataValidationFolder:
             
             if file.size <= self.regenerate_threshold_bytes:
                 # TODO add new strategy to generate only: not exchange with existing db checksum
-                strategies.generate_checksum_if_not_in_db(file, self.db)
+                t = threading.Thread(target=generate_checksum_if_not_in_db, args=(file,self.db))
             elif file.size > self.regenerate_threshold_bytes:
-                strategies.generate_checksum_if_not_in_db(file, self.db)
+                t = threading.Thread(target=generate_checksum_if_not_in_db, args=(file,self.db))
             else:
                 # TODO move below to new strategy
                 logging.info(f"{self.__class__.__name__}: file {path.as_posix()} is larger than {self.regenerate_threshold_bytes} bytes, skipping checksum generation")
-        
+                continue 
+            threads.append(t)
+            t.start() 
+            
+        # wait for the threads to complete
+        print("- adding to database...")
+        for thread in progressbar(threads, prefix=' ', units='files', size=25):
+            thread.join()
+            
         
     def clear(self) -> List[int]:
         """Clear the folder of files which are backed-up on LIMS or np-exp, or any added backup paths""" 
     
-        deleted_bytes = [] # keep a tally of space recovered
-        for path in progressbar(self.file_paths, prefix=' - checking for backups ', units='files', size=20):
+        def delete_if_valid_backup_in_db(result, idx, file_inst, db):
+            files_bytes = strategies.delete_if_valid_backup_in_db(file_inst, db)
+            result[idx] = files_bytes
+             
+        print("- checking for backups...")
+        deleted_bytes = [0]*len(self.file_paths) # keep a tally of space recovered
+        threads = [None]*len(self.file_paths) # following https://stackoverflow.com/a/6894023
+        # for path in progressbar(self.file_paths, prefix=' ', units='files', size=25):
+        for i, path in enumerate(self.file_paths):
+            
             try:
                 file = self.db.DVFile(path=path.as_posix())
             except (ValueError, TypeError):
                 logging.info(f"{self.__class__.__name__}: could not add to database, likely missing session ID: {path.as_posix()}")
                 continue
             
-            files_bytes = strategies.delete_if_valid_backup_in_db(file, self.db)
-            if files_bytes:
-                deleted_bytes += [files_bytes] if files_bytes != 0 else []
+            threads[i] = threading.Thread(target=delete_if_valid_backup_in_db, args=(deleted_bytes, i, file, self.db))
+            threads[i].start()
+            
+        for thread in progressbar(threads, prefix=' ', units='files', size=25):
+            thread.join()
         
         # tidy up folder if it's now empty:
         for f in pathlib.Path(self.path).rglob('*'):
@@ -1175,9 +1203,9 @@ class DataValidationFolder:
                 except OSError:
                     continue
         
+        deleted_bytes = [d for d in deleted_bytes if d != 0]
         print(f"{len(deleted_bytes)} files deleted \t|\t{sum(deleted_bytes) / 1024**3 :.1f} GB recovered")
         return deleted_bytes
-    
 
 
 def test_data_validation_file():
@@ -1326,7 +1354,7 @@ def clear_dirs():
         F.include_subfolders = include_subfolders
         F.regenerate_threshold_bytes = regenerate_threshold_bytes
         
-        print('=' * 80)
+        print('=' * 25)
         print(f'Clearing {F.path}')
         
         F.add_to_db()
@@ -1334,7 +1362,7 @@ def clear_dirs():
         deleted_bytes = F.clear()
         total_deleted_bytes += deleted_bytes 
         
-        print('=' * 80)
+        print('=' * 25)
         
     print(f"Finished clearing.\n{len(total_deleted_bytes)} files deleted \t|\t {sum(total_deleted_bytes) / 1024**3 :.1f} GB recovered")
     
