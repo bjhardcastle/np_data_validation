@@ -10,13 +10,6 @@ from typing import TYPE_CHECKING, List, Set, Union
 import data_validation as dv
 
 
-def new_file_with_checksum(subject: dv.DataValidationFile) -> dv.DataValidationFile:
-    """
-    Get a new file to avoid modifying the original.
-    """
-    return dv.DataValidationFile(path=subject.path, size=subject.size, checksum=checksum)
-
-
 def generate_checksum(subject: dv.DataValidationFile, db: dv.DataValidationDB) -> dv.DataValidationFile:
     """
     Generate a checksum for a file and add to database.
