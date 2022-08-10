@@ -6,7 +6,6 @@ from typing import List, Literal, Union
 
 import requests
 
-global COMP_ID, RIG_ID
 # get AIBS IDs, if set
 COMP_ID: str = os.environ.get("AIBS_COMP_ID", os.environ["COMPUTERNAME"]).upper()
 RIG_ID: str = os.environ.get("AIBS_RIG_ID",None)
