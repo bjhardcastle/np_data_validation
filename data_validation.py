@@ -1085,7 +1085,7 @@ class CRC32JsonDataValidationDB(DataValidationDB):
 class DataValidationFolder:
 
     db: Type[DataValidationDB] = MongoDataValidationDB
-    backup_paths: Set[str] = set() # auto-populated with lims, npexp, sync computer folders
+    backup_paths: Set[str] = None # auto-populated with lims, npexp, sync computer folders
     include_subfolders: bool = True
     regenerate_threshold_bytes: int = 1 * 1024**2 # MB 
     # - below this file size, checksums will always be generated - even if they're already in the database
@@ -1137,7 +1137,10 @@ class DataValidationFolder:
             # add to list of backup locations as a Folder type object of the same class
         for p in path:
             if str(p) != '':
-                self.backup_paths.add(str(p))
+                if not self.backup_paths:
+                    self.backup_paths = set([p])
+                else:
+                    self.backup_paths.add(str(p))
 
 
     def add_standard_backup_paths(self):
