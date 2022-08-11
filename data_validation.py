@@ -147,7 +147,7 @@ def error(e: TypeError) -> str:
 
 def progressbar(it,
                 prefix="",
-                size=40,
+                size=20,
                 file=sys.stdout,
                 units: str = None,
                 unit_scaler: int = 1,
@@ -167,7 +167,8 @@ def progressbar(it,
         yield item
         show(i + 1)
     if display:
-        file.write(" "*(digits*2 + 3 + len(units)+1 + len(prefix) + 2 + size) +"\r")
+        # file.write(" "*(digits*2 + 3 + len(units)+1 + len(prefix) + 2 + size) +"\r\n")
+        file.write("\n")
         file.flush()
 
 
