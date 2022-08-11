@@ -138,7 +138,7 @@ def find_valid_backups(subject: dv.DataValidationFile, db: dv.DataValidationDB, 
         backup_paths = set(backup_paths)
     backup_paths = list(backup_paths) if not isinstance(backup_paths, list) else backup_paths
     
-    assert all(subject.session.folder == dv.Session.folder(bp) for bp in backup_paths), f"Backup paths look inconsistent: {backup_paths}"
+    assert all(subject.session.folder == dv.Session.folder(bp) for bp in backup_paths if dv.Session.folder(bp)), f"Backup paths look inconsistent: {backup_paths}"
     
     subject = ensure_checksum(subject, db)
     
