@@ -1394,10 +1394,13 @@ def DVFolders_from_dirs(dirs: Union[str, List[str]]) -> Generator[DataValidation
             # the dir provided is a session folder: make this into a DVFolder
             yield DataValidationFolder(dir_path.as_posix())
         else:
-            # the dir provided might be a repository of session folders: check its subfolders and return as DVFolders if so 
-            # first, though, try the dir provided as it may contain session files
-            yield DataValidationFolder(dir_path.as_posix())
-            
+            # the dir provided is not a session folder itself, but might be a repository of session folders: 
+            # we'll check its subfolders and return them as DVFolders where appropriate
+            # - but first return the dir provided, as it may contain some loose session files (files not in standard session folder)
+            top_level_dir = DataValidationFolder(dir_path.as_posix())
+            top_level_dir.include_subfolders = False # if True, we'll rglob through every subfolder from the top_level, when what we want is to loop through individual subfolders as DVFolders below 
+            yield top_level_dir
+             
             for c in [child for child in dir_path.iterdir() if child.is_dir()]:
                 if skip(c):
                     continue
@@ -1428,7 +1431,9 @@ def clear_dirs():
     divider = '\n' + '='*40 + '\n\n'
     for F in DVFolders_from_dirs(dirs):
   
-        F.include_subfolders = include_subfolders
+        # TODO need to be able to set include_subfolders in DVFolders_from_dirs, but also want to leave it as a config
+        # option, which shoud be set here 
+        # F.include_subfolders = include_subfolders
         F.regenerate_threshold_bytes = regenerate_threshold_bytes
         F.min_age_days = min_age_days
         
