@@ -348,6 +348,7 @@ class SessionFile:
             is_file = os.path.isfile(path)
 
         if not is_file:
+            # TODO some files show accessible=True but at this point don't exist here - presumably deleted
             raise ValueError(f"{self.__class__.__name__}: path must point to a file {path}")
         else:
             self.path = path
