@@ -192,7 +192,7 @@ def chunk_crc32(file:Any=None, fsize=None) -> str:
 
     # don't show progress bar for small files
     display = True if fsize > 1E06 * chunk_size else False
-    # display=False #*
+    display=False #! not compatible with multithread processing of DVFolders
     crc = 0
     with open(str(file), 'rb', chunk_size) as ins:
         for _ in progressbar(range(int((fsize / chunk_size)) + 1),
