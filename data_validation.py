@@ -154,18 +154,20 @@ def progressbar(it,
                 display: bool = True):
     # from https://stackoverflow.com/a/34482761
     count = len(it)
+    digits = len(str(count*unit_scaler))
     def show(j):
         if display:
             x = int(size * j / (count if count != 0 else 1))
-            file.write("%s[%s%s] %i/%i %s\r" % (prefix, "#" * x, "." *
-                                                (size-x), j * unit_scaler, count * unit_scaler, units or ""))
+            # file.write("%s[%s%s] %i.2f/%i %s\r" % (prefix, "#" * x, "." *
+            #                                     (size-x), j * unit_scaler, count * unit_scaler, units or ""))
+            file.write(f'{prefix}[{x * "#"}{"." * (size-x)}] {(digits - len(str(j*unit_scaler)))*"0"}{j * unit_scaler}/{count * unit_scaler} {units or ""}\r')
             file.flush()
 
     for i, item in enumerate(it):
         yield item
         show(i + 1)
     if display:
-        file.write("\n")
+        file.write("")
         file.flush()
 
 
@@ -188,8 +190,8 @@ def chunk_crc32(file:Any=None, fsize=None) -> str:
         fsize = os.stat(file).st_size
 
     # don't show progress bar for small files
-    display = True if fsize > 10 * chunk_size else False
-    display=False #*
+    display = True if fsize > 1E06 * chunk_size else False
+    # display=False #*
     crc = 0
     with open(str(file), 'rb', chunk_size) as ins:
         for _ in progressbar(range(int((fsize / chunk_size)) + 1),
@@ -1083,10 +1085,13 @@ class DataValidationFolder:
     db: Type[DataValidationDB] = MongoDataValidationDB
     backup_paths: Set[str] = set() # auto-populated with lims, npexp, sync computer folders
     include_subfolders: bool = True
-    regenerate_threshold_bytes = 1024**2 * 1 # MB 
+    regenerate_threshold_bytes: int = 1 * 1024**2 # MB 
     # - below this file size, checksums will always be generated - even if they're already in the database
     # - above this size, behavior is to get the checksum from the database if it exists for the file (size + path must
     #   be identical), otherwise generate it
+    min_age_days: int = 0
+    # - minimum age of a file for it to be deleted (provided that a valid backup exists)
+
     
     def __init__(self, path: str):
         """Represents a folder for which we want to checksum the contents and add to database,
@@ -1119,8 +1124,6 @@ class DataValidationFolder:
             self.add_standard_backup_paths()
             
             
-                
-            
     def add_backup_path(self, path: Union[str, List[str]]):
         """Store one or more paths to folders possibly containing backups for the session"""
         if path and (isinstance(path, str) or isinstance(path, pathlib.Path)):
@@ -1133,6 +1136,7 @@ class DataValidationFolder:
         for p in path:
             if str(p) != '':
                 self.backup_paths.add(str(p))
+
 
     def add_standard_backup_paths(self):
         """ 
@@ -1245,13 +1249,19 @@ class DataValidationFolder:
                 logging.info(f"{self.__class__.__name__}: could not add to database, likely missing session ID: {path.as_posix()}")
                 continue
             
+            if int(file.session.date) \
+            > int((datetime.datetime.now() - datetime.timedelta(days=self.min_age_days)).strftime('%Y%m%d')) \
+                :
+                print(f'skipping, file less than {self.min_age_daysmin_age} days old: {file.session.date}')   
+                continue
+            
             threads[i] = threading.Thread(target=delete_if_valid_backup_in_db, args=(deleted_bytes, i, file, self.db, self.backup_paths))
             threads[i].start()
             
         for thread in progressbar(threads, prefix=' ', units='files', size=25):
             thread.join()
         
-        # tidy up empty subfolders if it's now empty:
+        # tidy up empty subfolders:
         check_dir_paths = os.walk(self.path, topdown=False, onerror=lambda: None, followlinks=False)
         for check_dir in check_dir_paths:
             try:
@@ -1419,18 +1429,14 @@ def clear_dirs():
   
         F.include_subfolders = include_subfolders
         F.regenerate_threshold_bytes = regenerate_threshold_bytes
+        F.min_age_days = min_age
         
         print(f'{divider} Clearing {F.path}')
         
         F.add_to_db()
-        min_age = 30 # days
-        if int(F.session.date) \
-        > int((datetime.datetime.now() - datetime.timedelta(days=min_age)).strftime('%Y%m%d')) \
-        :
-            print(f'skipping, file less than {min_age} days old: {F.session.date}')   
-            continue
         
         deleted_bytes = F.clear()
+        
         total_deleted_bytes += deleted_bytes 
         
     print(f"{divider} Finished clearing.\n{len(total_deleted_bytes)} files deleted \t|\t {sum(total_deleted_bytes) / 1024**3 :.1f} GB recovered")
