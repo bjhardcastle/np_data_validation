@@ -1429,7 +1429,7 @@ def clear_dirs():
   
         F.include_subfolders = include_subfolders
         F.regenerate_threshold_bytes = regenerate_threshold_bytes
-        F.min_age_days = min_age
+        F.min_age_days = min_age_days
         
         print(f'{divider} Clearing {F.path}')
         
