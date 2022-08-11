@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 
 import pathlib
+import pprint
 from typing import TYPE_CHECKING, List, Set, Union
 
 # if TYPE_CHECKING:
@@ -137,7 +138,7 @@ def find_valid_backups(subject: dv.DataValidationFile, db: dv.DataValidationDB, 
     else:
         backup_paths = set(backup_paths)
     backup_paths = list(backup_paths) if not isinstance(backup_paths, list) else backup_paths
-    
+    pprint.pprint(f'backup paths: {backup_paths}')
     subject = ensure_checksum(subject, db)
     
     invalid_backups = find_invalid_copies_in_db(subject, db)
