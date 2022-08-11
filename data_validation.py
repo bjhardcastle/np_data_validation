@@ -256,7 +256,7 @@ class Session:
         if not isinstance(path, str):
             raise TypeError(f"{self.__class__.__name__} path must be a string")
 
-        self.folder = self.__class__.folder(path)
+        # self.folder = self.__class__.folder(path)
         # TODO maybe not do this - could be set to class without realizing - just assign for instances
 
         if self.folder:
@@ -273,8 +273,8 @@ class Session:
         else:
             raise ValueError(f"{self.__class__.__name__} path must contain a valid session folder {path}")
 
-    @classmethod
-    def folder(cls, path) -> Union[str, None]:
+    @property
+    def folder(self, path) -> Union[str, None]:
         """Extract [10-digit session ID]_[6-digit mouse ID]_[6-digit date
         str] from a file or folder path"""
 
@@ -285,7 +285,7 @@ class Session:
         session_folders = re.findall(session_reg_exp, path)
         if session_folders:
             if not all(s == session_folders[0] for s in session_folders):
-                logging.warning(f"{cls.__class__} Mismatch between session folder strings - file may be in the wrong folder: {path}")
+                logging.warning(f"{self.__class__.__name__} Mismatch between session folder strings - file may be in the wrong folder: {path}")
             return session_folders[0]
         else:
             return None
@@ -301,9 +301,8 @@ class Session:
     @property
     def lims_path(self) -> Union[pathlib.Path, None]:
         '''get lims id from path/str and lookup the corresponding directory in lims'''
-        if not (self.folder or self.id):
+        if not self.id:
             return None
-        
         try:
             lims_dg = dg.lims_data_getter(self.id)
             WKF_QRY =   '''
@@ -317,7 +316,6 @@ class Session:
                 return pathlib.Path('/'+exp_data[0]['storage_directory'])
             else:
                 return None
-            
         except:
             return None
 
@@ -1065,7 +1063,7 @@ class CRC32JsonDataValidationDB(DataValidationDB):
             name = os.path.basename(path)
             parent = pathlib.Path(path).parent.parts[-1]
 
-            session_folder = Session.folder(path)
+            session_folder = Session(path).folder
 
             if not size:
                 size = os.path.getsize(path)
@@ -1383,14 +1381,14 @@ def DVFolders_from_dirs(dirs: Union[str, List[str]]) -> Generator[DataValidation
         if any(skip in str(dir) for skip in skip_filters):
             return True
         #* removing this condition as a test - perhaps not necessary, as long as files belong to a session
-        # if not Session.folder(str(dir)):
+        # if not Session(str(dir)).folder:
         #     return True
         
     for dir in dirs:
         dir_path = pathlib.Path(dir)
         if skip(dir_path):
             continue
-        if Session.folder(dir):
+        if Session(dir).folder:
             # the dir provided is a session folder: make this into a DVFolder
             yield DataValidationFolder(dir_path.as_posix())
         else:
@@ -1427,7 +1425,7 @@ def clear_dirs():
     pprint.pprint(dirs, indent=4, compact=False)
     divider = '\n' + '='*40 + '\n\n'
     for F in DVFolders_from_dirs(dirs):
-  
+        
         F.include_subfolders = include_subfolders
         F.regenerate_threshold_bytes = regenerate_threshold_bytes
         F.min_age_days = min_age_days
