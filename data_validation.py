@@ -1394,12 +1394,12 @@ def clear_dirs():
     
     config = configparser.ConfigParser()
     config.read(os.path.join(os.path.dirname(__file__), 'config.ini'))
-    dirs = [pathlib.Path(d).as_posix() for d in config['options']['dirs'].split(',')]
+    dirs = [pathlib.Path(d.strip()).as_posix() for d in config['options']['dirs'].split(',')]
     
     if os.getenv('AIBS_COMP_ID'):
         # get folders for routine clearing on rig computers
         comp = os.getenv('AIBS_COMP_ID').split('-')[-1].lower()
-        dirs += [pathlib.Path(d).as_posix() for d in config[comp]['dirs'].split(',')]
+        dirs += [pathlib.Path(d.strip()).as_posix() for d in config[comp]['dirs'].split(',')]
     
     while '' in dirs:
         dirs.remove('')
