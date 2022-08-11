@@ -101,6 +101,7 @@ R"""Tools for validating neuropixels data files from ecephys recording sessions.
 
 import abc
 import configparser
+import datetime
 import enum
 import json
 import logging
@@ -1405,26 +1406,31 @@ def clear_dirs():
     
     include_subfolders = config['options'].getboolean('include_subfolders', fallback=True)
     regenerate_threshold_bytes = config['options'].getint('regenerate_threshold_bytes', fallback=1024**2)
+    min_age_days = config['options'].getint('min_age_days', fallback=0)
     
     total_deleted_bytes = [] # keep a tally of space recovered
     print('Checking:')
-    pprint.pprint(dirs[:], indent=4, compact=True)
+    pprint.pprint(dirs, indent=4, compact=False)
+    divider = '\n' + '='*40 + '\n\n'
     for F in DVFolders_from_dirs(dirs):
   
         F.include_subfolders = include_subfolders
         F.regenerate_threshold_bytes = regenerate_threshold_bytes
         
-        print('=' * 40)
-        print(f'Clearing {F.path}')
+        print(f'{divider} Clearing {F.path}')
         
         F.add_to_db()
+        min_age = 30 # days
+        if int(F.session.date) \
+        > int((datetime.datetime.now() - datetime.timedelta(days=min_age)).strftime('%Y%m%d')) \
+        :
+            print(f'skipping, less than {min_age=}: {F.session.date}')   
+            continue
         
         deleted_bytes = F.clear()
         total_deleted_bytes += deleted_bytes 
         
-        print('=' * 40)
-        
-    print(f"Finished clearing.\n{len(total_deleted_bytes)} files deleted \t|\t {sum(total_deleted_bytes) / 1024**3 :.1f} GB recovered")
+    print(f"{divider} Finished clearing.\n{len(total_deleted_bytes)} files deleted \t|\t {sum(total_deleted_bytes) / 1024**3 :.1f} GB recovered")
     
     
 if __name__ == "__main__":
