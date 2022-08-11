@@ -1427,7 +1427,7 @@ def clear_dirs():
         if int(F.session.date) \
         > int((datetime.datetime.now() - datetime.timedelta(days=min_age)).strftime('%Y%m%d')) \
         :
-            print(f'skipping, less than {min_age=}: {F.session.date}')   
+            print(f'skipping, file less than {min_age} days old: {F.session.date}')   
             continue
         
         deleted_bytes = F.clear()
