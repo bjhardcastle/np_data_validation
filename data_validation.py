@@ -1254,7 +1254,7 @@ class DataValidationFolder:
             if int(file.session.date) \
             > int((datetime.datetime.now() - datetime.timedelta(days=self.min_age_days)).strftime('%Y%m%d')) \
                 :
-                print(f'skipping, file less than {self.min_age_daysmin_age} days old: {file.session.date}')   
+                print(f'skipping, file less than {self.min_age_days} days old: {file.session.date}')   
                 continue
             
             threads[i] = threading.Thread(target=delete_if_valid_backup_in_db, args=(deleted_bytes, i, file, self.db, self.backup_paths))
