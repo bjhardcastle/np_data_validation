@@ -167,7 +167,7 @@ def progressbar(it,
         yield item
         show(i + 1)
     if display:
-        file.write("")
+        file.write(" "*(digits*2 + 3 + len(units)+1 + len(prefix) + 2 + size) +"\r")
         file.flush()
 
 
@@ -270,7 +270,7 @@ class Session:
             self.date = lims_dg.data_dict['datestring']
             self.folder = ('_').join([self.id, self.mouse, self.date])
         else:
-            raise ValueError(f"{self.__class__.__name__} path must contain a valid session folder")
+            raise ValueError(f"{self.__class__.__name__} path must contain a valid session folder {path}")
 
     @classmethod
     def folder(cls, path) -> Union[str, None]:
@@ -279,7 +279,7 @@ class Session:
 
         # identify a session based on
         # [10-digit session ID]_[6-digit mouseID]_[6-digit date str]
-        session_reg_exp = "[0-9]{0,10}_[0-9]{0,6}_[0-9]{0,8}"
+        session_reg_exp = "[0-9]{10}_[0-9]{6}_[0-9]{8}"
 
         session_folders = re.findall(session_reg_exp, path)
         if session_folders:
@@ -1259,10 +1259,10 @@ class DataValidationFolder:
             threads[i].start()
             
         for thread in progressbar(threads, prefix=' ', units='files', size=25):
-            thread.join()
+            thread.join() if thread else None
         
         # tidy up empty subfolders:
-        check_dir_paths = os.walk(self.path, topdown=False, onerror=lambda: None, followlinks=False)
+        check_dir_paths = os.walk(self.path, topdown=False, followlinks=False)
         for check_dir in check_dir_paths:
             try:
                 os.rmdir(check_dir[0]) # raises error if not empty
@@ -1380,39 +1380,38 @@ def DVFolders_from_dirs(dirs: Union[str, List[str]]) -> Generator[DataValidation
         skip_filters = ["$RECYCLE.BIN"]
         if any(skip in str(dir) for skip in skip_filters):
             return True
-        if not Session.folder(str(dir)):
-            return True
+        #* removing this condition as a test - perhaps not necessary, as long as files belong to a session
+        # if not Session.folder(str(dir)):
+        #     return True
         
     for dir in dirs:
         dir_path = pathlib.Path(dir)
+        if skip(dir_path):
+            continue
         if Session.folder(dir):
             # the dir provided is a session folder: make this into a DVFolder
-            if skip(dir_path):
-                continue
-            else:
-                yield DataValidationFolder(dir_path.as_posix())
+            yield DataValidationFolder(dir_path.as_posix())
         else:
             # the dir provided might be a repository of session folders: check its subfolders and return as DVFolders if so 
+            # first, though, try the dir provided as it may contain session files
+            yield DataValidationFolder(dir_path.as_posix())
+            
             for c in [child for child in dir_path.iterdir() if child.is_dir()]:
                 if skip(c):
                     continue
                 else:
                     yield DataValidationFolder(c.as_posix())
-
     
 def clear_dirs():
     
     config = configparser.ConfigParser()
     config.read(os.path.join(os.path.dirname(__file__), 'config.ini'))
-    dirs = [pathlib.Path(d.strip()).as_posix() for d in config['options']['dirs'].split(',')]
+    dirs = [pathlib.Path(d.strip()).resolve().as_posix() for d in config['options']['dirs'].split(',') if d != '']
     
     if os.getenv('AIBS_COMP_ID'):
         # get folders for routine clearing on rig computers
         comp = os.getenv('AIBS_COMP_ID').split('-')[-1].lower()
-        dirs += [pathlib.Path(d.strip()).as_posix() for d in config[comp]['dirs'].split(',')]
-    
-    while '' in dirs:
-        dirs.remove('')
+        dirs += [pathlib.Path(d.strip()).resolve().as_posix() for d in config[comp]['dirs'].split(',') if d != '']
     
     if not dirs:
         return
