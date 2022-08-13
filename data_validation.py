@@ -1216,15 +1216,15 @@ class DataValidationFolder:
                 self.add_backup_path(z_drive)
             
     @property
-    def file_paths(self) -> Set[pathlib.Path]:
+    def file_paths(self) -> List[pathlib.Path]:
         """return a list of files in the folder"""
         if hasattr(self, '_file_paths') and self._file_paths:
             return self._file_paths
         
         if self.include_subfolders:
-            self._file_paths = set(child for child in pathlib.Path(self.path).rglob('*') if not child.is_dir())
+            self._file_paths = [child for child in pathlib.Path(self.path).rglob('*') if not child.is_dir()]
         else:
-            self._file_paths = set(child for child in pathlib.Path(self.path).iterdir() if not child.is_dir())
+            self._file_paths = [child for child in pathlib.Path(self.path).iterdir() if not child.is_dir()]
 
         return self._file_paths
     
