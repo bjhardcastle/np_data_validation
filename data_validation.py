@@ -1348,13 +1348,12 @@ def test_data_validation_file():
 
 test_data_validation_file()
 
-def report(file: DataValidationFile, other: List[DataValidationFile]):
+def report(file: DataValidationFile, other: Union[DataValidationFolder, List[DataValidationFile]]):
     if isinstance(other, DataValidationFile):
-        other = [other]
-    if len(other) == 1:
         result = file.Match(file==other).name
         logging.info(f"{result} | {file.path} {other.path} | {file.checksum} {other.checksum} | {file.size} {other.size} bytes")
-    else:
+    
+    elif isinstance(other, list):
         for others in other:
             report(file, others)
         
