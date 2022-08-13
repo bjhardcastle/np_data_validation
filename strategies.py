@@ -99,13 +99,13 @@ def delete_if_valid_backup_in_db(subject: dv.DataValidationFile, db: dv.DataVali
         if (subject.checksum != backups[0].checksum or subject.size != backups[0].size):
             raise AssertionError(f"Not a valid backup, something has gone wrong: {subject} {backups[0]}")
         
+        # currently, we don't want to delete raw data on A/B drives before the sorted data make it to npexp
         if (subject.path.startswith("A:") or subject.path.startswith("B:")) \
             and subject.probe_dir and subject.probe_dir in ["ABC", "DEF"] \
             and not (
                 (subject.session.npexp_path and any(s for s in subject.session.npexp_path.glob('*_sorted*')))
                 or (subject.session.lims_path and any(s for s in subject.session.lims_path.glob('*_sorted*')))
             ):
-            # currently, we don't want to delete raw data on A/B drives before the sorted data make it to npexp
             dv.logging.info(f"Skipped deletion of raw probe data on Acq: no sorted folders on npexp or lims yet {subject.path} ")
             return 0
             
@@ -128,10 +128,9 @@ def find_valid_backups(subject: dv.DataValidationFile, db: dv.DataValidationDB, 
             backup_paths.add(subject.session.lims_path.as_posix())
         if subject.npexp_path and subject.session.npexp_path.as_posix() not in subject.path:
             backup_paths.add(subject.session.npexp_path.as_posix())
-        if not backup_paths:
-            backup_paths.add('//W10DTSM112719/neuropixels_data/' + subject.session.folder)
-            backup_paths.add('//W10DTSM18306/neuropixels_data/' + subject.session.folder)
-            backup_paths.add('//W10DTSM18307/neuropixels_data/' + subject.session.folder)
+        if not backup_paths \
+            and subject.z_drive_path and subject.z_drive_path.as_posix() not in subject.path:
+            backup_paths.add(subject.z_drive_path.as_posix())
             
     # TODO fix order here so lims folder is first, npexp second: converting to list seems to reorder
     else:

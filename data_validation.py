@@ -396,7 +396,7 @@ class SessionFile:
     
     
     @property
-    def session_relative_path(self) -> Union[str, None]:
+    def session_relative_path(self) -> pathlib.Path:
         '''filepath relative to a session folder's parent'''
         # wherever the file is, get its path relative to the parent of a
         # hypothetical session folder ie. session_id/.../filename.ext :
@@ -407,17 +407,54 @@ class SessionFile:
             return session_relative_path
     
     @property
-    def relative_path(self) -> Union[str, None]:
+    def relative_path(self) -> pathlib.Path:
         '''filepath relative to a session folder'''
         return pathlib.Path(self.session_relative_path.relative_to(self.session.folder))
     
     @property
-    def npexp_path(self) -> Union[str, None]:
+    def npexp_path(self) -> pathlib.Path:
         '''filepath on npexp (might not exist)'''
         if self.session:
             return self.session.NPEXP_ROOT / self.session_relative_path
         else:
             return None
+        
+    # TODO add lims_path property
+
+    @property
+    def z_drive_path(self) -> pathlib.Path:
+        """Path to possible backup on 'z' drive (might not exist)
+        
+        This property getter just prevents repeat calls to find the path
+        """
+        if hasattr(self, '_z_drive_path'):
+            return self._z_drive_path
+        else:
+            self._z_drive_path = self.get_z_drive_path()
+            return self.z_drive_path
+            
+    def get_z_drive_path(self) -> pathlib.Path:
+        """Path to possible backup on 'z' drive (might not exist)"""
+        running_on_rig = nptk.COMP_ID if "NP." in nptk.COMP_ID else None
+        local_path = self.path[0] not in ["/", "\\"]
+        rig_from_path = nptk.Rig.rig_from_path(self.path) 
+        
+        # get the sync computer's path 
+        if (running_on_rig and local_path):
+            sync_path = nptk.Rig.Sync.path
+        elif rig_from_path:
+            sync_path = f"{rig_from_path}-Sync"
+        else:
+            sync_path = None
+            
+        if sync_path and sync_path not in self.path:
+            # add the z drive/neuropix data folder for this rig
+            return pathlib.Path(
+                    sync_path, 
+                    "neuropixels_data", 
+                    self.session.folder
+                    ) / self.session_relative_path
+                
     
     def __lt__(self, other):
         if self.session.id == other.session.id:
@@ -1167,36 +1204,19 @@ class DataValidationFolder:
             and Session.NPEXP_ROOT.as_posix() not in self.path:
             self.add_backup_path(self.npexp_path.as_posix())
             
-        if not self.backup_paths:
+        if not self.backup_paths and self.session:
             # add only the relevant backup path for this rig (if applicable):
             # currently this is just the neuropix_data folder on the sync computer
             
-            running_on_rig = nptk.COMP_ID if "NP." in nptk.COMP_ID else None
-            local_folder = self.path[0] not in ["/", "\\"]
-            rig_from_path = nptk.Rig.rig_from_path(self.path) 
+            # use the first file in the DVFolder to get this path
+            file1 = self.file_paths[0]
+            File1 = self.db.DVFile(path=file1.as_posix())
+            z_drive = File1.z_drive_path
+            if z_drive:
+                self.add_backup_path(z_drive)
             
-            # get the sync computer's path 
-            if (running_on_rig and local_folder):
-                sync_path = nptk.Rig.Sync.path
-            elif rig_from_path:
-                all_comps = nptk.Rig.all_comps() 
-                sync_path = f"{rig_from_path}-Sync"
-            else:
-                sync_path = None
-                
-            if sync_path and sync_path not in self.path:
-                # add the neuropix data folder for this rig
-                self.add_backup_path(   
-                    pathlib.Path(
-                        sync_path, 
-                        "neuropixels_data", 
-                        self.session.folder
-                        ).as_posix()
-                    )
-    
-    
     @property
-    def file_paths(self) -> List[DataValidationFile]:
+    def file_paths(self) -> Set[pathlib.Path]:
         """return a list of files in the folder"""
         if hasattr(self, '_file_paths') and self._file_paths:
             return self._file_paths
