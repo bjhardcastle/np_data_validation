@@ -106,7 +106,7 @@ def delete_if_valid_backup_in_db(subject: dv.DataValidationFile, db: dv.DataVali
                 or (subject.session.lims_path and any(s for s in subject.session.lims_path.glob('*_sorted*')))
             ):
             # currently, we don't want to delete raw data on A/B drives before the sorted data make it to npexp
-            dv.logging.info(f"Skipped deletion of raw probe data: no sorted folders are on npexp or lims yet {subject.path} ")
+            dv.logging.info(f"Skipped deletion of raw probe data on Acq: no sorted folders on npexp or lims yet {subject.path} ")
             return 0
             
         try:
@@ -116,7 +116,7 @@ def delete_if_valid_backup_in_db(subject: dv.DataValidationFile, db: dv.DataVali
             return subject.size
         
         except PermissionError:
-            dv.logging.info(f"Permission denied: could not delete {subject.path}")
+            dv.logging.exception(f"Permission denied: could not delete {subject.path}")
             
     return 0
 
@@ -146,7 +146,6 @@ def find_valid_backups(subject: dv.DataValidationFile, db: dv.DataValidationDB, 
     if invalid_backups:
         dv.report(subject, invalid_backups)
         # return None
-        #TODO valid/invalid backups need adjusting to not mix up probeABC/DEF files
     
     matches = find_valid_copies_in_db(subject, db)
     
