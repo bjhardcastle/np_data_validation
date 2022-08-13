@@ -1348,8 +1348,18 @@ def test_data_validation_file():
 
 test_data_validation_file()
 
-
-def report(file: DataValidationFile, comparisons: List[DataValidationFile]):
+def report(file: DataValidationFile, other: List[DataValidationFile]):
+    if isinstance(other, DataValidationFile):
+        other = [other]
+    if len(other) == 1:
+        result = file.Match(file==other).name
+        logging.info(f"{result} | {file.path} {other.path} | {file.checksum} {other.checksum} | {file.size} {other.size} bytes")
+    else:
+        for others in other:
+            report(file, others)
+        
+    
+def report_multline_print(file: DataValidationFile, comparisons: List[DataValidationFile]):
     """ report on the contents of the folder, compared to database
         """
     if isinstance(comparisons, DataValidationFile):
