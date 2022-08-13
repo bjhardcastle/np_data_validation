@@ -98,6 +98,7 @@ R"""Tools for validating neuropixels data files from ecephys recording sessions.
 
     f.validate_backups(verbose=True)
 """
+from __future__ import annotations
 
 import abc
 import configparser
@@ -285,7 +286,7 @@ class Session:
         session_folders = re.findall(session_reg_exp, path)
         if session_folders:
             if not all(s == session_folders[0] for s in session_folders):
-                logging.warning(f"{cls.__class__} Mismatch between session folder strings - file may be in the wrong folder: {path}")
+                logging.warning(f"{cls.__class__.__name__} Mismatch between session folder strings - file may be in the wrong folder: {path}")
             return session_folders[0]
         else:
             return None
@@ -578,7 +579,16 @@ class DataValidationFile(abc.ABC):
             self._checksum = value
         else:
             raise ValueError(f"{self.__class__.__name__}: trying to set an invalid {self.checksum_name} checksum")
-
+    
+    def report(self, other: Union[DataValidationFile, List[DataValidationFile]]):
+        """Log a report on the comparison with one or more files"""
+        if isinstance(other, list):
+            for others in other:
+                self.report(others)
+        else:
+            result = self.Match(self==other).name
+            logging.info(f"{result} | {self.path} {other.path} | {self.checksum} {other.checksum} | {self.size} {other.size} bytes")
+    
     def __repr__(self):
         return f"(path='{self.path or ''}', checksum='{self.checksum or ''}', size={self.size or ''})"
 
@@ -601,7 +611,7 @@ class DataValidationFile(abc.ABC):
         UNKNOWN = -1
         SELF = 5
         #! watch out: SELF_NO_CHECKSUM and OTHER_NO_CHECKSUM
-        # depend on the order of objects in the inequality
+        #! depend on the order of objects in the inequality
         SELF_NO_CHECKSUM = 6
         OTHER_NO_CHECKSUM = 7
         CHECKSUM_COLLISION = 10
@@ -1277,7 +1287,7 @@ class DataValidationFolder:
             if int(file.session.date) \
             > int((datetime.datetime.now() - datetime.timedelta(days=self.min_age_days)).strftime('%Y%m%d')) \
                 :
-                print(f'skipping, file less than {self.min_age_days} days old: {file.session.date}')   
+                logging.debug(f'skipping file less than {self.min_age_days} days old: {file.session.date}')   
                 continue
             
             threads[i] = threading.Thread(target=delete_if_valid_backup_in_db, args=(deleted_bytes, i, file, self.db, self.backup_paths))
@@ -1297,7 +1307,7 @@ class DataValidationFolder:
         
         # return cumulative sum of bytes deleted from folder
         deleted_bytes = [d for d in deleted_bytes if d != 0]
-        print(f"{len(deleted_bytes)} files deleted \t|\t{sum(deleted_bytes) / 1024**3 :.1f} GB recovered")
+        print(f"{len(deleted_bytes)} files deleted | {sum(deleted_bytes) / 1024**3 :.1f} GB recovered")
         return deleted_bytes
 
 
@@ -1347,15 +1357,6 @@ def test_data_validation_file():
 
 
 test_data_validation_file()
-
-def report(file: DataValidationFile, other: Union[DataValidationFolder, List[DataValidationFile]]):
-    if isinstance(other, DataValidationFile):
-        result = file.Match(file==other).name
-        logging.info(f"{result} | {file.path} {other.path} | {file.checksum} {other.checksum} | {file.size} {other.size} bytes")
-    
-    elif isinstance(other, list):
-        for others in other:
-            report(file, others)
         
     
 def report_multline_print(file: DataValidationFile, comparisons: List[DataValidationFile]):
@@ -1454,13 +1455,18 @@ def clear_dirs():
         return
     
     include_subfolders = config['options'].getboolean('include_subfolders', fallback=True)
+    
     regenerate_threshold_bytes = config['options'].getint('regenerate_threshold_bytes', fallback=1024**2)
     min_age_days = config['options'].getint('min_age_days', fallback=0)
-    
+        
     total_deleted_bytes = [] # keep a tally of space recovered
     print('Checking:')
     pprint.pprint(dirs, indent=4, compact=False)
+    if min_age_days > 0:
+        print(f'Skipping files less than {min_age_days} days old')
+    
     divider = '\n' + '='*40 + '\n\n'
+    
     for F in DVFolders_from_dirs(dirs):
   
         # TODO need to be able to set include_subfolders in DVFolders_from_dirs, but also want to leave it as a config

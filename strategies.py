@@ -94,7 +94,7 @@ def delete_if_valid_backup_in_db(subject: dv.DataValidationFile, db: dv.DataVali
     subject = ensure_checksum(subject, db)
     backups = find_valid_backups(subject, db, backup_paths)
     if backups:
-        dv.report(subject, backups)
+        subject.report(backups)
         # a final check before deleting (all items in 'backups' should be valid copies):
         if (subject.checksum != backups[0].checksum or subject.size != backups[0].size):
             raise AssertionError(f"Not a valid backup, something has gone wrong: {subject} {backups[0]}")
@@ -106,7 +106,7 @@ def delete_if_valid_backup_in_db(subject: dv.DataValidationFile, db: dv.DataVali
                 (subject.session.npexp_path and any(s for s in subject.session.npexp_path.glob('*_sorted*')))
                 or (subject.session.lims_path and any(s for s in subject.session.lims_path.glob('*_sorted*')))
             ):
-            dv.logging.info(f"Skipped deletion of raw probe data on Acq: no sorted folders on npexp or lims yet {subject.path} ")
+            dv.logging.info(f"Skipped deletion of raw probe data on Acq: no sorted folders on npexp or lims yet {subject.session.folder} ")
             return 0
             
         try:
@@ -143,7 +143,7 @@ def find_valid_backups(subject: dv.DataValidationFile, db: dv.DataValidationDB, 
     
     invalid_backups = find_invalid_copies_in_db(subject, db)
     if invalid_backups:
-        dv.report(subject, invalid_backups)
+        subject.report(invalid_backups)
         # return None
     
     matches = find_valid_copies_in_db(subject, db)
