@@ -1257,7 +1257,7 @@ class DataValidationFolder:
             t.start() 
             
         # wait for the threads to complete
-        print("- adding to database...")
+        print("- adding files to database...")
         for thread in progressbar(threads, prefix=' ', units='files', size=25):
             thread.join()
             
@@ -1269,7 +1269,7 @@ class DataValidationFolder:
             files_bytes = strategies.delete_if_valid_backup_in_db(file_inst, db, backup_paths)
             result[idx] = files_bytes
              
-        print("- validating backups...")
+        print("- searching for valid backups...")
         deleted_bytes = [0]*len(self.file_paths) # keep a tally of space recovered
         threads = [None]*len(self.file_paths) # following https://stackoverflow.com/a/6894023
         # for path in progressbar(self.file_paths, prefix=' ', units='files', size=25):
@@ -1476,7 +1476,7 @@ def clear_dirs():
         if F.session:
             F.add_standard_backup_paths()
             
-        print(f'{divider} Clearing {F.path}')
+        print(f'{divider}Clearing {F.path}')
         
         F.add_to_db()
         
@@ -1484,7 +1484,7 @@ def clear_dirs():
         
         total_deleted_bytes += deleted_bytes 
         
-    print(f"{divider} Finished clearing.\n{len(total_deleted_bytes)} files deleted \t|\t {sum(total_deleted_bytes) / 1024**3 :.1f} GB recovered")
+    print(f"{divider}Finished clearing.\n{len(total_deleted_bytes)} files deleted | {sum(total_deleted_bytes) / 1024**3 :.1f} GB recovered\n")
     
     
 if __name__ == "__main__":
