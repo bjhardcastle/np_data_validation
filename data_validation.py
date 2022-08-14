@@ -1168,9 +1168,6 @@ class DataValidationFolder:
             raise ValueError(f"{self.__class__.__name__}: path must point to a folder {path}")
         else:
             self.path = pathlib.Path(path).as_posix()
-        
-        if self.session:
-            self.add_standard_backup_paths()
             
             
     def add_backup_path(self, path: Union[str, List[str]]):
@@ -1475,6 +1472,10 @@ def clear_dirs():
         F.regenerate_threshold_bytes = regenerate_threshold_bytes
         F.min_age_days = min_age_days
         
+                
+        if F.session:
+            F.add_standard_backup_paths()
+            
         print(f'{divider} Clearing {F.path}')
         
         F.add_to_db()
