@@ -117,12 +117,9 @@ import shelve
 import sys
 import tempfile
 import threading
-import time
 import traceback
 import zlib
-from pydoc import doc
-from typing import (Any, Callable, Dict, Generator, List, Optional, Set, Tuple,
-                    Type, Union)
+from typing import Any, Callable, Generator, List, Set, Type, Union
 
 try:
     import pymongo
@@ -132,14 +129,13 @@ except ImportError:
 import data_getters as dg  # from corbett's QC repo
 import nptk  # utilities for np rigs and data
 import strategies  # for interacting with database
-import timing  # nice utility that prints total execution time on exit
 
 # LOG_DIR = fR"//allen/programs/mindscope/workgroups/np-exp/ben/data_validation/logs/"
 logging.basicConfig(format="%(asctime)s %(levelname)s %(message)s", filename="data_validation.log", level=logging.DEBUG,datefmt="%Y-%m-%d %H:%M")
 log = logging.getLogger(__name__)
 logHandler = logging.handlers.RotatingFileHandler('data_validation.log', maxBytes=10000, backupCount=5)
 log.addHandler(logHandler)
-log.setLevel(logging.DEBUG)
+log.setLevel(logging.INFO)
 
 
 def error(e: TypeError) -> str:

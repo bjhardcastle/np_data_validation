@@ -1,10 +1,10 @@
 """Strategies for looking up DataValidationFiles in a database and performing some action depending on context."""
 
 from __future__ import annotations
-import os
 
+import os
 import pathlib
-from typing import TYPE_CHECKING, List, Set, Union
+from typing import List, Set, Union
 
 # if TYPE_CHECKING:
 import data_validation as dv
@@ -142,9 +142,10 @@ def find_valid_backups(subject: dv.DataValidationFile, db: dv.DataValidationDB, 
     subject = ensure_checksum(subject, db)
     
     invalid_backups = find_invalid_copies_in_db(subject, db)
-    if invalid_backups:
-        subject.report(invalid_backups)
-        # return None
+    
+    #* disabling this as the info is not currently useful
+    # if invalid_backups:
+    #     subject.report(invalid_backups)
     
     matches = find_valid_copies_in_db(subject, db)
     
