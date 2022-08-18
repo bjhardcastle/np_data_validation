@@ -12,8 +12,13 @@ git checkout main
 git pull origin main
 
 CALL conda env create --file environment.yml
-CALL conda activate dv
 CALL pip install -r requirements.txt
+
+SET rig=%AIBS_COMP_ID%
+
+IF %rig%==NP.1-Acq CALL C:\ProgramData\Miniconda3\Scripts\activate.bat C:\ProgramData\Miniconda3
+
+CALL conda activate dv
 
 CALL python data_validation.py
 cmd \k
