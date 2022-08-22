@@ -6,6 +6,8 @@ import shutil
 import xml.etree.ElementTree
 from typing import Dict, List, Union
 
+import matplotlib.pyplot as plt
+import seaborn as sns
 import pandas as pd
 import xmltodict
 
@@ -359,13 +361,13 @@ if __name__ == "__main__":
 
         for probe in probes:
             x = probe.get_metrics_by_age()
-            print(x)
 
         with open(probes_file, 'wb') as f:
             pickle.dump(probes, f)
             
 
-    metric = 'snr'
+    metric = 'amplitude'
+    for probe in probes:
         plt.subplot(1,2,1)
         sns.lineplot(x=probe.metrics[metric].index,
                      y=probe.metrics[metric]['mean'])
