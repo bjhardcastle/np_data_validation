@@ -43,7 +43,7 @@ if __name__ == '__main__':
     #print(results_query)
     
     # symlink
-    symlink_repo = R"C:\temp\json_symlinks"
+    symlink_repo = R"\\allen\programs\mindscope\workgroups\dynamicrouting\ben\platform_json_symlinks_files"
     pathlib.Path(symlink_repo).mkdir(parents=True, exist_ok=True)
     # by default, remote-to-remote symlinks are disabled in Windows
     # enable them here:
