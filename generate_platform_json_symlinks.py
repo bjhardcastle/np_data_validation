@@ -54,19 +54,20 @@ if __name__ == '__main__':
         #print('Checking directory', result['storage_directory'])
         directory = result['storage_directory']
         name = result['name']
-        for root, _, files in os.walk(pathlib.Path('/' + directory)):
+
+        for root, _, files in os.walk(pathlib.Path('\\' + directory), followlinks=True):
             for file in files:
                 if 'platformD1.json' in file: # if it is platform d1 json
-                    print(file)
                     """
                     if not os.path.exists(os.path.join(symlink_repo, result['name'])): # make folder for each of the project names
                         os.mkdir(os.path.join(symlink_repo, name))
                     """
                     symlink_filename = f'{name}.{file}'
                     symlink_path = pathlib.Path(symlink_repo, symlink_filename)
-                    print('Symlink path', symlink_path)
+                    #print('Symlink path', symlink_path)
                     print()
                     target_path = pathlib.Path(root, file)
+
                     try:
                         symlink_path.symlink_to(target_path)
                     except FileExistsError:
